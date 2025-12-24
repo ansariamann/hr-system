@@ -318,6 +318,76 @@ async def trigger_file_cleanup(
         )
 
 
+@router.post("/monitoring/performance")
+async def trigger_performance_monitoring(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Trigger system performance monitoring task."""
+    try:
+        from ats_backend.workers.email_tasks import monitor_system_performance
+        
+        # Queue the performance monitoring task
+        task = monitor_system_performance.delay()
+        
+        # Wait for result (since performance monitoring should be quick)
+        result = task.get(timeout=30)
+        
+        logger.info(
+            "Performance monitoring completed",
+            user_id=str(current_user.id),
+            task_id=task.id,
+            alerts_count=len(result.get("alerts", []))
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(
+            "Failed to trigger performance monitoring",
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to trigger performance monitoring: {str(e)}"
+        )
+
+
+@router.get("/monitoring/health-check")
+async def trigger_health_check(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Trigger worker health check task."""
+    try:
+        from ats_backend.workers.email_tasks import health_check_workers
+        
+        # Queue the health check task
+        task = health_check_workers.delay()
+        
+        # Wait for result (since health check should be quick)
+        result = task.get(timeout=30)
+        
+        logger.info(
+            "Health check completed",
+            user_id=str(current_user.id),
+            task_id=task.id,
+            healthy=result.get("healthy", False)
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error(
+            "Failed to trigger health check",
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to trigger health check: {str(e)}"
+        )
+
+
 @router.post("/cleanup/failed-jobs")
 async def trigger_failed_jobs_cleanup(
     client_id: Optional[str] = Query(None, description="Client ID to clean jobs for"),

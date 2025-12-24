@@ -14,12 +14,37 @@ logger = structlog.get_logger(__name__)
 
 
 class EmailProcessingTask(Task):
-    """Base task class for email processing with error handling."""
+    """Base task class for email processing with enhanced error handling."""
     
     autoretry_for = (Exception,)
     retry_kwargs = {"max_retries": 3, "countdown": 60}
     retry_backoff = True
+    retry_backoff_max = 300  # Maximum backoff of 5 minutes
     retry_jitter = True
+    
+    def on_failure(self, exc, task_id, args, kwargs, einfo):
+        """Handle task failure with detailed logging."""
+        logger.error(
+            "Email processing task failed permanently",
+            task_id=task_id,
+            exception=str(exc),
+            exception_type=type(exc).__name__,
+            args=args,
+            kwargs=kwargs,
+            traceback=str(einfo.traceback) if einfo else None
+        )
+    
+    def on_retry(self, exc, task_id, args, kwargs, einfo):
+        """Handle task retry with detailed logging."""
+        logger.warning(
+            "Email processing task retrying",
+            task_id=task_id,
+            exception=str(exc),
+            exception_type=type(exc).__name__,
+            retry_count=self.request.retries,
+            max_retries=self.max_retries,
+            countdown=self.retry_kwargs.get("countdown", 60)
+        )
 
 
 @celery_app.task(bind=True, base=EmailProcessingTask, name="process_email_message")
@@ -364,12 +389,101 @@ def cleanup_failed_jobs_all_clients(
         }
 
 
-@celery_app.task(bind=True, name="get_processing_stats")
-def get_processing_stats(
-    self,
-    client_id: str,
-    days_back: int = 30
-) -> Dict[str, Any]:
+@celery_app.task(bind=True, name="health_check_workers")
+def health_check_workers(self) -> Dict[str, Any]:
+    """Periodic health check task for workers.
+    
+    Returns:
+        Dictionary with health check results
+    """
+    try:
+        logger.info(
+            "Starting worker health check task",
+            task_id=self.request.id
+        )
+        
+        from ats_backend.workers.celery_app import task_monitor
+        
+        # Get worker statistics
+        worker_stats = task_monitor.get_worker_stats()
+        active_tasks = task_monitor.get_active_tasks()
+        queue_info = task_monitor.get_queue_lengths()
+        
+        # Determine health status
+        healthy = True
+        issues = []
+        
+        # Check if workers are available
+        if worker_stats.get("total_workers", 0) == 0:
+            healthy = False
+            issues.append("No workers available")
+        
+        # Check for errors in monitoring data
+        if "error" in worker_stats:
+            healthy = False
+            issues.append(f"Worker stats error: {worker_stats['error']}")
+        
+        if "error" in active_tasks:
+            healthy = False
+            issues.append(f"Active tasks error: {active_tasks['error']}")
+        
+        if "error" in queue_info:
+            healthy = False
+            issues.append(f"Queue info error: {queue_info['error']}")
+        
+        # Check queue backlog
+        total_queued = queue_info.get("total_queued", 0)
+        if total_queued > 100:  # Configurable threshold
+            issues.append(f"High queue backlog: {total_queued} tasks")
+        
+        # Check for stuck tasks (active for too long)
+        active_task_data = active_tasks.get("active_tasks", {})
+        for worker_name, tasks in active_task_data.items():
+            for task in tasks:
+                # This is a simplified check - in production you'd want to track task start times
+                if len(tasks) > 10:  # Too many active tasks per worker
+                    issues.append(f"Worker {worker_name} has {len(tasks)} active tasks")
+        
+        health_result = {
+            "healthy": healthy,
+            "status": "healthy" if healthy else "degraded",
+            "issues": issues,
+            "summary": {
+                "workers": worker_stats.get("total_workers", 0),
+                "active_tasks": active_tasks.get("total_active", 0),
+                "queued_tasks": total_queued
+            },
+            "timestamp": logger.info.__self__.timestamp if hasattr(logger.info.__self__, 'timestamp') else None,
+            "task_id": self.request.id
+        }
+        
+        if not healthy:
+            logger.warning(
+                "Worker health check detected issues",
+                task_id=self.request.id,
+                issues=issues
+            )
+        else:
+            logger.info(
+                "Worker health check passed",
+                task_id=self.request.id
+            )
+        
+        return health_result
+        
+    except Exception as e:
+        logger.error(
+            "Worker health check task failed",
+            task_id=self.request.id,
+            error=str(e)
+        )
+        
+        return {
+            "healthy": False,
+            "status": "error",
+            "error": str(e),
+            "task_id": self.request.id
+        }
     """Get processing statistics for a client asynchronously.
     
     Args:
@@ -419,5 +533,193 @@ def get_processing_stats(
         return {
             "error": str(e),
             "client_id": client_id,
+            "task_id": self.request.id
+        }
+
+
+@celery_app.task(bind=True, name="health_check_workers")
+def health_check_workers(self) -> Dict[str, Any]:
+    """Periodic health check task for workers.
+    
+    Returns:
+        Dictionary with health check results
+    """
+    try:
+        logger.info(
+            "Starting worker health check task",
+            task_id=self.request.id
+        )
+        
+        from ats_backend.workers.celery_app import task_monitor
+        
+        # Get worker statistics
+        worker_stats = task_monitor.get_worker_stats()
+        active_tasks = task_monitor.get_active_tasks()
+        queue_info = task_monitor.get_queue_lengths()
+        
+        # Determine health status
+        healthy = True
+        issues = []
+        
+        # Check if workers are available
+        if worker_stats.get("total_workers", 0) == 0:
+            healthy = False
+            issues.append("No workers available")
+        
+        # Check for errors in monitoring data
+        if "error" in worker_stats:
+            healthy = False
+            issues.append(f"Worker stats error: {worker_stats['error']}")
+        
+        if "error" in active_tasks:
+            healthy = False
+            issues.append(f"Active tasks error: {active_tasks['error']}")
+        
+        if "error" in queue_info:
+            healthy = False
+            issues.append(f"Queue info error: {queue_info['error']}")
+        
+        # Check queue backlog
+        total_queued = queue_info.get("total_queued", 0)
+        if total_queued > 100:  # Configurable threshold
+            issues.append(f"High queue backlog: {total_queued} tasks")
+        
+        # Check for stuck tasks (active for too long)
+        active_task_data = active_tasks.get("active_tasks", {})
+        for worker_name, tasks in active_task_data.items():
+            for task in tasks:
+                # This is a simplified check - in production you'd want to track task start times
+                if len(tasks) > 10:  # Too many active tasks per worker
+                    issues.append(f"Worker {worker_name} has {len(tasks)} active tasks")
+        
+        health_result = {
+            "healthy": healthy,
+            "status": "healthy" if healthy else "degraded",
+            "issues": issues,
+            "summary": {
+                "workers": worker_stats.get("total_workers", 0),
+                "active_tasks": active_tasks.get("total_active", 0),
+                "queued_tasks": total_queued
+            },
+            "timestamp": logger.info.__self__.timestamp if hasattr(logger.info.__self__, 'timestamp') else None,
+            "task_id": self.request.id
+        }
+        
+        if not healthy:
+            logger.warning(
+                "Worker health check detected issues",
+                task_id=self.request.id,
+                issues=issues
+            )
+        else:
+            logger.info(
+                "Worker health check passed",
+                task_id=self.request.id
+            )
+        
+        return health_result
+        
+    except Exception as e:
+        logger.error(
+            "Worker health check task failed",
+            task_id=self.request.id,
+            error=str(e)
+        )
+        
+        return {
+            "healthy": False,
+            "status": "error",
+            "error": str(e),
+            "task_id": self.request.id
+        }
+
+
+@celery_app.task(bind=True, name="monitor_system_performance")
+def monitor_system_performance(self) -> Dict[str, Any]:
+    """Monitor system performance metrics.
+    
+    Returns:
+        Dictionary with performance metrics
+    """
+    try:
+        logger.info(
+            "Starting system performance monitoring task",
+            task_id=self.request.id
+        )
+        
+        import psutil
+        from datetime import datetime, timedelta
+        from ats_backend.workers.celery_app import task_monitor
+        
+        # Get system metrics
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Get Celery metrics
+        worker_stats = task_monitor.get_worker_stats()
+        active_tasks = task_monitor.get_active_tasks()
+        queue_info = task_monitor.get_queue_lengths()
+        
+        # Calculate performance indicators
+        performance_metrics = {
+            "system": {
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory.percent,
+                "memory_available_gb": memory.available / (1024**3),
+                "disk_percent": (disk.used / disk.total) * 100,
+                "disk_free_gb": disk.free / (1024**3)
+            },
+            "celery": {
+                "total_workers": worker_stats.get("total_workers", 0),
+                "active_tasks": active_tasks.get("total_active", 0),
+                "queued_tasks": queue_info.get("total_queued", 0),
+                "queue_breakdown": queue_info.get("queues", {})
+            },
+            "alerts": [],
+            "timestamp": datetime.utcnow().isoformat(),
+            "task_id": self.request.id
+        }
+        
+        # Generate alerts based on thresholds
+        if cpu_percent > 80:
+            performance_metrics["alerts"].append(f"High CPU usage: {cpu_percent}%")
+        
+        if memory.percent > 85:
+            performance_metrics["alerts"].append(f"High memory usage: {memory.percent}%")
+        
+        if (disk.used / disk.total) * 100 > 90:
+            performance_metrics["alerts"].append(f"High disk usage: {(disk.used / disk.total) * 100:.1f}%")
+        
+        if queue_info.get("total_queued", 0) > 50:
+            performance_metrics["alerts"].append(f"High queue backlog: {queue_info.get('total_queued', 0)} tasks")
+        
+        if worker_stats.get("total_workers", 0) == 0:
+            performance_metrics["alerts"].append("No workers available")
+        
+        # Log alerts if any
+        if performance_metrics["alerts"]:
+            logger.warning(
+                "System performance alerts detected",
+                task_id=self.request.id,
+                alerts=performance_metrics["alerts"]
+            )
+        else:
+            logger.info(
+                "System performance monitoring completed - no alerts",
+                task_id=self.request.id
+            )
+        
+        return performance_metrics
+        
+    except Exception as e:
+        logger.error(
+            "System performance monitoring task failed",
+            task_id=self.request.id,
+            error=str(e)
+        )
+        
+        return {
+            "error": str(e),
             "task_id": self.request.id
         }

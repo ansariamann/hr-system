@@ -3,6 +3,7 @@
 from typing import Optional
 import redis.asyncio as redis
 from redis.asyncio import Redis
+import redis as sync_redis
 
 from .config import settings
 import structlog
@@ -146,3 +147,20 @@ async def get_redis() -> Redis:
         raise RuntimeError("Redis not initialized. Call initialize() first.")
     
     return redis_manager.client
+
+
+def get_redis_client() -> sync_redis.Redis:
+    """Get synchronous Redis client for Celery and other sync operations.
+    
+    Returns:
+        Synchronous Redis client
+    """
+    return sync_redis.from_url(
+        settings.redis_url,
+        encoding="utf-8",
+        decode_responses=True,
+        socket_connect_timeout=5,
+        socket_timeout=5,
+        retry_on_timeout=True,
+        health_check_interval=30,
+    )

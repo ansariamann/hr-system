@@ -15,6 +15,7 @@ from ats_backend.auth.utils import authenticate_user, create_access_token
 from ats_backend.models.client import Client
 from ats_backend.services.client_service import ClientService
 from ats_backend.api.email import router as email_router
+from ats_backend.api.monitoring import router as monitoring_router
 
 logger = structlog.get_logger(__name__)
 
@@ -30,6 +31,7 @@ app.add_middleware(AuthenticationMiddleware)
 
 # Include API routers
 app.include_router(email_router)
+app.include_router(monitoring_router)
 
 
 @app.get("/health")

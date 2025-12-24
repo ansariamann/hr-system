@@ -19,12 +19,64 @@ logger = structlog.get_logger(__name__)
 
 
 class ResumeProcessingTask(Task):
-    """Base task class for resume processing with error handling."""
+    """Base task class for resume processing with enhanced error handling."""
     
     autoretry_for = (Exception,)
     retry_kwargs = {"max_retries": 3, "countdown": 120}  # Longer countdown for resume processing
     retry_backoff = True
+    retry_backoff_max = 600  # Maximum backoff of 10 minutes
     retry_jitter = True
+    
+    def on_failure(self, exc, task_id, args, kwargs, einfo):
+        """Handle task failure with detailed logging."""
+        logger.error(
+            "Resume processing task failed permanently",
+            task_id=task_id,
+            exception=str(exc),
+            exception_type=type(exc).__name__,
+            args=args,
+            kwargs=kwargs,
+            traceback=str(einfo.traceback) if einfo else None
+        )
+        
+        # Try to update job status to failed if possible
+        try:
+            if len(args) >= 2:  # client_id, job_id
+                client_id, job_id = args[0], args[1]
+                user_id = args[2] if len(args) > 2 else None
+                
+                from ats_backend.core.database import get_db
+                from ats_backend.services.resume_job_service import ResumeJobService
+                from uuid import UUID
+                
+                db = next(get_db())
+                try:
+                    resume_job_service = ResumeJobService()
+                    resume_job_service.update_job_status(
+                        db, UUID(job_id), "FAILED",
+                        error_message=f"Task failed permanently: {str(exc)}",
+                        user_id=UUID(user_id) if user_id else None
+                    )
+                finally:
+                    db.close()
+        except Exception as update_error:
+            logger.error(
+                "Failed to update job status after task failure",
+                task_id=task_id,
+                update_error=str(update_error)
+            )
+    
+    def on_retry(self, exc, task_id, args, kwargs, einfo):
+        """Handle task retry with detailed logging."""
+        logger.warning(
+            "Resume processing task retrying",
+            task_id=task_id,
+            exception=str(exc),
+            exception_type=type(exc).__name__,
+            retry_count=self.request.retries,
+            max_retries=self.max_retries,
+            countdown=self.retry_kwargs.get("countdown", 120)
+        )
 
 
 @celery_app.task(bind=True, base=ResumeProcessingTask, name="process_resume_file")
