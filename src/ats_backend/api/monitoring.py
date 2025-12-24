@@ -1,17 +1,220 @@
 """API endpoints for task and system monitoring."""
 
 from typing import Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from uuid import UUID
+from datetime import datetime, timedelta
 import structlog
 
 from ats_backend.auth.dependencies import get_current_user
 from ats_backend.auth.models import User
 from ats_backend.workers.celery_app import task_monitor, celery_app
+from ats_backend.core.health import health_checker
+from ats_backend.core.metrics import metrics_collector
+from ats_backend.core.logging import performance_logger, system_logger
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
+
+
+@router.get("/health")
+async def comprehensive_health_check(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get comprehensive system health information."""
+    try:
+        with performance_logger.log_operation_time(
+            "comprehensive_health_check",
+            user_id=str(current_user.id)
+        ):
+            health_report = await health_checker.run_all_checks()
+        
+        logger.info(
+            "Comprehensive health check completed",
+            user_id=str(current_user.id),
+            overall_status=health_report["overall_status"],
+            total_checks=health_report["summary"]["total_checks"],
+            unhealthy_checks=health_report["summary"]["unhealthy_checks"]
+        )
+        
+        return health_report
+        
+    except Exception as e:
+        logger.error(
+            "Comprehensive health check failed",
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Health check failed: {str(e)}"
+        )
+
+
+@router.get("/health/simple")
+async def simple_health_check() -> Dict[str, Any]:
+    """Simple health check endpoint for load balancers."""
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "ats-backend"
+    }
+
+
+@router.get("/metrics")
+async def get_system_metrics(
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get comprehensive system metrics."""
+    try:
+        with performance_logger.log_operation_time(
+            "get_system_metrics",
+            user_id=str(current_user.id)
+        ):
+            metrics = metrics_collector.get_comprehensive_metrics()
+        
+        logger.info(
+            "System metrics retrieved",
+            user_id=str(current_user.id),
+            metric_types=len(metrics.get("metric_counts", {})),
+            processing_metrics=metrics.get("total_processing_metrics", 0)
+        )
+        
+        return metrics
+        
+    except Exception as e:
+        logger.error(
+            "Failed to get system metrics",
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get system metrics: {str(e)}"
+        )
+
+
+@router.get("/metrics/processing")
+async def get_processing_metrics(
+    operation: Optional[str] = Query(None, description="Filter by operation name"),
+    client_id: Optional[str] = Query(None, description="Filter by client ID"),
+    hours_back: int = Query(24, description="Hours to look back"),
+    limit: int = Query(100, description="Maximum number of results"),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get processing metrics with filtering."""
+    try:
+        since = datetime.utcnow() - timedelta(hours=hours_back)
+        target_client_id = client_id or str(current_user.client_id)
+        
+        processing_metrics = metrics_collector.get_processing_metrics_history(
+            operation=operation,
+            client_id=target_client_id,
+            since=since,
+            limit=limit
+        )
+        
+        logger.info(
+            "Processing metrics retrieved",
+            user_id=str(current_user.id),
+            operation=operation,
+            client_id=target_client_id,
+            hours_back=hours_back,
+            results_count=len(processing_metrics)
+        )
+        
+        return {
+            "metrics": [m.to_dict() for m in processing_metrics],
+            "filters": {
+                "operation": operation,
+                "client_id": target_client_id,
+                "hours_back": hours_back,
+                "limit": limit
+            },
+            "total_results": len(processing_metrics),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(
+            "Failed to get processing metrics",
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get processing metrics: {str(e)}"
+        )
+
+
+@router.get("/metrics/summary/{metric_name}")
+async def get_metric_summary(
+    metric_name: str,
+    hours_back: int = Query(24, description="Hours to look back"),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Get summary statistics for a specific metric."""
+    try:
+        since = datetime.utcnow() - timedelta(hours=hours_back)
+        summary = metrics_collector.get_metric_summary(metric_name, since=since)
+        
+        logger.info(
+            "Metric summary retrieved",
+            user_id=str(current_user.id),
+            metric_name=metric_name,
+            hours_back=hours_back,
+            data_points=summary.get("count", 0)
+        )
+        
+        return summary
+        
+    except Exception as e:
+        logger.error(
+            "Failed to get metric summary",
+            user_id=str(current_user.id),
+            metric_name=metric_name,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get metric summary: {str(e)}"
+        )
+
+
+@router.post("/metrics/cleanup")
+async def cleanup_old_metrics(
+    hours_old: int = Query(24, description="Remove metrics older than this many hours"),
+    current_user: User = Depends(get_current_user)
+) -> Dict[str, Any]:
+    """Clean up old metrics to free memory."""
+    try:
+        older_than = timedelta(hours=hours_old)
+        metrics_collector.cleanup_old_metrics(older_than)
+        
+        logger.info(
+            "Metrics cleanup completed",
+            user_id=str(current_user.id),
+            hours_old=hours_old
+        )
+        
+        return {
+            "success": True,
+            "message": f"Cleaned up metrics older than {hours_old} hours",
+            "hours_old": hours_old,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(
+            "Failed to cleanup metrics",
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to cleanup metrics: {str(e)}"
+        )
 
 
 @router.get("/tasks/{task_id}")
@@ -21,7 +224,12 @@ async def get_task_status(
 ) -> Dict[str, Any]:
     """Get detailed status of a specific task."""
     try:
-        task_info = task_monitor.get_task_info(task_id)
+        with performance_logger.log_operation_time(
+            "get_task_status",
+            user_id=str(current_user.id),
+            task_id=task_id
+        ):
+            task_info = task_monitor.get_task_info(task_id)
         
         logger.info(
             "Task status retrieved",
@@ -51,7 +259,11 @@ async def get_active_tasks(
 ) -> Dict[str, Any]:
     """Get information about currently active tasks."""
     try:
-        active_tasks = task_monitor.get_active_tasks()
+        with performance_logger.log_operation_time(
+            "get_active_tasks",
+            user_id=str(current_user.id)
+        ):
+            active_tasks = task_monitor.get_active_tasks()
         
         logger.info(
             "Active tasks retrieved",
@@ -79,7 +291,11 @@ async def get_worker_stats(
 ) -> Dict[str, Any]:
     """Get worker statistics and health information."""
     try:
-        worker_stats = task_monitor.get_worker_stats()
+        with performance_logger.log_operation_time(
+            "get_worker_stats",
+            user_id=str(current_user.id)
+        ):
+            worker_stats = task_monitor.get_worker_stats()
         
         logger.info(
             "Worker stats retrieved",
@@ -107,7 +323,18 @@ async def get_queue_info(
 ) -> Dict[str, Any]:
     """Get queue lengths and information."""
     try:
-        queue_info = task_monitor.get_queue_lengths()
+        with performance_logger.log_operation_time(
+            "get_queue_info",
+            user_id=str(current_user.id)
+        ):
+            queue_info = task_monitor.get_queue_lengths()
+        
+        # Record queue metrics
+        metrics_collector.record_metric(
+            "api.queue_info_requests",
+            1,
+            {"user_id": str(current_user.id)}
+        )
         
         logger.info(
             "Queue info retrieved",

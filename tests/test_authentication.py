@@ -92,28 +92,36 @@ def test_client_data(setup_database):
     """Create test client and user."""
     db = TestingSessionLocal()
     
-    # Create test client
-    client = ClientService.create_client(
-        db=db,
-        name="Test Company",
-        email_domain="test.com"
-    )
-    
-    # Create test user with shorter password to avoid bcrypt 72-byte limit
-    user = User(
-        email="test@test.com",
-        hashed_password=get_password_hash("testpass"),  # Shorter password
-        full_name="Test User",
-        client_id=client.id,
-        is_active=True
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    
-    yield {"client": client, "user": user}
-    
-    db.close()
+    try:
+        # Create test client
+        client = ClientService.create_client(
+            db=db,
+            name="Test Company",
+            email_domain="test.com"
+        )
+        
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == "test@test.com").first()
+        if existing_user:
+            # Delete existing user to avoid conflicts
+            db.delete(existing_user)
+            db.commit()
+        
+        # Create test user with shorter password to avoid bcrypt 72-byte limit
+        user = User(
+            email="test@test.com",
+            hashed_password=get_password_hash("testpass"),  # Shorter password
+            full_name="Test User",
+            client_id=client.id,
+            is_active=True
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        
+        yield {"client": client, "user": user}
+    finally:
+        db.close()
 
 
 def test_health_check(client):
