@@ -499,7 +499,8 @@ async def flag_application(
             flagged = application_service.flag_application(
                 db=db,
                 application_id=application_id,
-                flag_reason=flag_reason
+                flag_reason=flag_reason,
+                user_id=current_user.id
             )
             
             if not flagged:

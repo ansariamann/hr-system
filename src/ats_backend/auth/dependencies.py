@@ -47,7 +47,8 @@ async def get_current_user(
         raise credentials_exception
     
     try:
-        token_data = verify_token(credentials.credentials)
+        from .utils import verify_token
+        token_data = await verify_token(credentials.credentials, db)
         if token_data is None or token_data.user_id is None:
             logger.warning("Invalid token data")
             raise credentials_exception
@@ -116,7 +117,8 @@ async def get_optional_current_user(
         return None
         
     try:
-        token_data = verify_token(credentials.credentials)
+        from .utils import verify_token
+        token_data = await verify_token(credentials.credentials, db)
         if token_data is None or token_data.user_id is None:
             return None
             

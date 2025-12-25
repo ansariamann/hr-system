@@ -8,6 +8,7 @@ from datetime import datetime
 import structlog
 
 from ats_backend.email.models import EmailAttachment, FileStorageInfo
+from ats_backend.security.abuse_protection import abuse_protection
 
 logger = structlog.get_logger(__name__)
 
@@ -47,6 +48,26 @@ class FileStorageService:
             ValueError: If attachment is invalid
         """
         try:
+            # Validate attachment using abuse protection
+            # Note: This is a synchronous call, but the validation is designed to be fast
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # If we're in an async context, we can't use await here
+                    # The validation should have been done at the API level
+                    pass
+                else:
+                    # If not in async context, run validation
+                    asyncio.run(abuse_protection.validate_attachment(attachment))
+            except RuntimeError:
+                # Already in async context, validation should have been done at API level
+                pass
+            
+            # Additional synchronous validation
+            if not self.validate_file_format(attachment):
+                raise ValueError(f"Unsupported file format: {attachment.filename}")
+            
             # Create client-specific directory
             client_dir = self.base_storage_path / client_id
             client_dir.mkdir(parents=True, exist_ok=True)
@@ -55,6 +76,10 @@ class FileStorageService:
             file_extension = self._get_file_extension(attachment.filename)
             unique_filename = f"{uuid.uuid4()}{file_extension}"
             file_path = client_dir / unique_filename
+            
+            # Validate file path for security (prevent path traversal)
+            if not str(file_path).startswith(str(self.base_storage_path)):
+                raise ValueError("Invalid file path detected")
             
             # Write file content
             with open(file_path, 'wb') as f:

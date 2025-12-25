@@ -18,6 +18,7 @@ from ats_backend.email.models import (
 )
 from ats_backend.email.processor import EmailProcessor
 from ats_backend.email.parser import EmailParser
+from ats_backend.security.abuse_protection import abuse_protection
 from ats_backend.workers.email_tasks import (
     process_email_message,
     cleanup_old_files,
@@ -62,6 +63,13 @@ async def ingest_email(
                 detail="Client ID does not match authenticated user's client"
             )
         
+        # Comprehensive abuse protection validation
+        await abuse_protection.validate_email_ingestion(
+            request=request,
+            email=email_request.email,
+            client_id=current_client.id
+        )
+        
         # Get request metadata
         ip_address = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent")
@@ -71,7 +79,8 @@ async def ingest_email(
             message_id=email_request.email.message_id,
             client_id=str(current_client.id),
             user_id=str(current_user.id),
-            attachment_count=len(email_request.email.attachments)
+            attachment_count=len(email_request.email.attachments),
+            ip_address=ip_address
         )
         
         # Validate email message
@@ -152,6 +161,13 @@ async def ingest_email_async(
                 detail="Client ID does not match authenticated user's client"
             )
         
+        # Comprehensive abuse protection validation
+        await abuse_protection.validate_email_ingestion(
+            request=request,
+            email=email_request.email,
+            client_id=current_client.id
+        )
+        
         # Get request metadata
         ip_address = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent")
@@ -160,7 +176,8 @@ async def ingest_email_async(
             "Async email ingestion request received",
             message_id=email_request.email.message_id,
             client_id=str(current_client.id),
-            user_id=str(current_user.id)
+            user_id=str(current_user.id),
+            ip_address=ip_address
         )
         
         # Queue email processing task
@@ -449,6 +466,13 @@ async def email_webhook_raw(
         parser = EmailParser()
         email_message = parser.parse_raw_email(raw_email)
         
+        # Apply abuse protection validation
+        await abuse_protection.validate_email_ingestion(
+            request=request,
+            email=email_message,
+            client_id=client_id
+        )
+        
         # Get request metadata
         ip_address = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent")
@@ -479,6 +503,8 @@ async def email_webhook_raw(
         
         return result
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
             "Raw email webhook failed",

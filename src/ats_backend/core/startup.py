@@ -126,9 +126,8 @@ class StartupManager:
         
         # Initialize Redis
         try:
-            redis_client = await get_redis_client()
-            await redis_client.ping()
-            await redis_client.close()
+            from .redis import redis_manager
+            await redis_manager.initialize()
             
             self.checks_passed['redis'] = True
             self.logger.info("Redis connection established successfully")
@@ -137,6 +136,20 @@ class StartupManager:
             self.critical_failures.append(f"Redis initialization: {e}")
             self.checks_passed['redis'] = False
             self.logger.error("Redis initialization failed", error=str(e))
+            # Don't raise - allow system to continue with degraded functionality
+        
+        # Initialize SSE Manager
+        try:
+            from .sse_manager import sse_manager
+            await sse_manager.initialize()
+            
+            self.checks_passed['sse_manager'] = True
+            self.logger.info("SSE Manager initialized successfully")
+            
+        except Exception as e:
+            self.critical_failures.append(f"SSE Manager initialization: {e}")
+            self.checks_passed['sse_manager'] = False
+            self.logger.error("SSE Manager initialization failed", error=str(e))
             # Don't raise - allow system to continue with degraded functionality
     
     async def _perform_health_checks(self):
@@ -329,12 +342,21 @@ class GracefulShutdown:
         
         try:
             # Close Redis connections
-            redis_client = await get_redis_client()
-            await redis_client.close()
+            from .redis import redis_manager
+            await redis_manager.close()
             self.logger.info("Redis connections closed")
             
         except Exception as e:
             self.logger.warning("Error closing Redis connections", error=str(e))
+        
+        try:
+            # Shutdown SSE Manager
+            from .sse_manager import sse_manager
+            await sse_manager.force_disconnect_all()
+            self.logger.info("SSE Manager shutdown completed")
+            
+        except Exception as e:
+            self.logger.warning("Error shutting down SSE Manager", error=str(e))
     
     async def _final_cleanup(self):
         """Perform final cleanup operations."""

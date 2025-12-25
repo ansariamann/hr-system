@@ -23,6 +23,7 @@ from ats_backend.core.error_handling import (
 )
 from ats_backend.core.startup import initialize_application, shutdown_application, validate_startup_environment
 from ats_backend.auth.middleware import AuthenticationMiddleware
+from ats_backend.security.middleware import AbuseProtectionMiddleware, InputSanitizationMiddleware
 from ats_backend.auth.dependencies import get_current_user, get_current_client
 from ats_backend.auth.models import User, Token, UserResponse
 from ats_backend.auth.utils import authenticate_user, create_access_token
@@ -32,6 +33,8 @@ from ats_backend.api.email import router as email_router
 from ats_backend.api.monitoring import router as monitoring_router
 from ats_backend.api.candidates import router as candidates_router
 from ats_backend.api.applications import router as applications_router
+from ats_backend.api.security import router as security_router
+from ats_backend.api.sse import router as sse_router
 
 # Configure logging
 configure_logging()
@@ -220,12 +223,16 @@ app = FastAPI(
 app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(LoggingMiddleware)
 app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(AbuseProtectionMiddleware)
+app.add_middleware(InputSanitizationMiddleware)
 
 # Include API routers
 app.include_router(email_router)
 app.include_router(monitoring_router)
 app.include_router(candidates_router)
 app.include_router(applications_router)
+app.include_router(security_router)
+app.include_router(sse_router)
 
 
 @app.get("/health")
@@ -284,22 +291,35 @@ async def health_check():
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
-    """Authenticate user and return access token with comprehensive error handling."""
+    """Authenticate user and return access token with comprehensive error handling and security features."""
+    from ats_backend.auth.utils import authenticate_user
+    
     context = ErrorContext(
         operation="user_login",
         component="authentication",
         additional_data={"email": form_data.username}
     )
     
+    # Extract client information for security logging
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+    
     try:
         with performance_logger.log_operation_time(
             "user_login",
             email=form_data.username
         ):
-            user = authenticate_user(db, form_data.username, form_data.password)
+            user = await authenticate_user(
+                db, 
+                form_data.username, 
+                form_data.password,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
             
             if not user:
                 logger.warning("Login failed", email=form_data.username)

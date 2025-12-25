@@ -33,13 +33,27 @@ def client():
 
 @pytest.fixture(autouse=True)
 def setup_database():
-    """Initialize database for tests."""
+    """Initialize database and Redis for tests."""
+    import os
+    import asyncio
+    os.environ["TESTING"] = "true"
+    
+    # Override database settings for local testing
+    os.environ["POSTGRES_HOST"] = "localhost"
+    os.environ["POSTGRES_PASSWORD"] = "ats_dev_password_2024"
+    os.environ["REDIS_HOST"] = "localhost"
+    os.environ["TOKEN_REPLAY_PROTECTION"] = "false"  # Disable for tests
+    
     from ats_backend.core.database import db_manager
-    # The db_manager uses the database URL from settings/environment
-    # For tests, we'll just initialize it normally
+    
+    # Initialize database
     db_manager.initialize()
+    
     yield
-    # Cleanup is handled automatically
+    
+    # Clean up environment
+    os.environ.pop("TESTING", None)
+    os.environ.pop("TOKEN_REPLAY_PROTECTION", None)
 
 
 def test_health_endpoint_no_auth(client):

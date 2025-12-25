@@ -43,42 +43,40 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         # Verify token and set client context
+        db_gen = get_db()
+        db: Session = next(db_gen)
+        
         try:
-            token_data = verify_token(token)
+            from .utils import verify_token
+            token_data = await verify_token(token, db)
             if token_data and token_data.user_id:
-                # Get database session
-                db_gen = get_db()
-                db: Session = next(db_gen)
-                
-                try:
-                    # Verify user exists and is active
-                    user = get_user_by_id(db, token_data.user_id)
-                    if user and user.is_active and user.client_id:
-                        # Set client context for RLS
-                        set_client_context(db, user.client_id)
-                        
-                        # Store user info in request state
-                        request.state.current_user_id = user.id
-                        request.state.current_client_id = user.client_id
-                        
-                        logger.debug("Client context set via middleware",
-                                   user_id=str(user.id),
-                                   client_id=str(user.client_id),
-                                   path=request.url.path)
-                    else:
-                        logger.warning("Invalid or inactive user", 
-                                     user_id=str(token_data.user_id) if token_data.user_id else None)
-                        
-                finally:
-                    # Clean up database session
-                    try:
-                        db.close()
-                    except:
-                        pass
-                        
+                # Verify user exists and is active
+                user = get_user_by_id(db, token_data.user_id)
+                if user and user.is_active and user.client_id:
+                    # Set client context for RLS
+                    set_client_context(db, user.client_id)
+                    
+                    # Store user info in request state
+                    request.state.current_user_id = user.id
+                    request.state.current_client_id = user.client_id
+                    
+                    logger.debug("Client context set via middleware",
+                               user_id=str(user.id),
+                               client_id=str(user.client_id),
+                               path=request.url.path)
+                else:
+                    logger.warning("Invalid or inactive user", 
+                                 user_id=str(token_data.user_id) if token_data.user_id else None)
+                    
         except Exception as e:
             logger.warning("Authentication middleware error", error=str(e))
             # Continue without authentication rather than failing
+        finally:
+            # Clean up database session
+            try:
+                db.close()
+            except:
+                pass
         
         # Process request
         response = await call_next(request)

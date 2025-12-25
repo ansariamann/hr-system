@@ -1,5 +1,6 @@
 """Application management service."""
 
+import asyncio
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
@@ -9,6 +10,7 @@ import structlog
 from ats_backend.models.application import Application
 from ats_backend.repositories.application import ApplicationRepository
 from ats_backend.schemas.application import ApplicationCreate, ApplicationUpdate
+from ats_backend.core.event_publisher import event_publisher
 
 logger = structlog.get_logger(__name__)
 
@@ -28,7 +30,7 @@ class ApplicationService:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
     ) -> Application:
-        """Create a new application with audit logging.
+        """Create a new application with audit logging and real-time events.
         
         Args:
             db: Database session
@@ -61,6 +63,44 @@ class ApplicationService:
                 candidate_id=str(application.candidate_id),
                 status=application.status
             )
+            
+            # Publish real-time event
+            if user_id:
+                try:
+                    # Get candidate name for the event
+                    candidate_name = "Unknown"
+                    if hasattr(application, 'candidate') and application.candidate:
+                        candidate_name = application.candidate.name
+                    else:
+                        # Fallback: query candidate separately
+                        from ats_backend.repositories.candidate import CandidateRepository
+                        candidate_repo = CandidateRepository()
+                        candidate = candidate_repo.get_by_id(db, application.candidate_id)
+                        if candidate:
+                            candidate_name = candidate.name
+                    
+                    # Publish event asynchronously
+                    asyncio.create_task(
+                        event_publisher.publish_application_created(
+                            tenant_id=client_id,
+                            application_id=application.id,
+                            candidate_id=application.candidate_id,
+                            candidate_name=candidate_name,
+                            status=application.status,
+                            user_id=user_id,
+                            additional_data={
+                                "ip_address": ip_address,
+                                "user_agent": user_agent
+                            }
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Failed to publish application created event",
+                        application_id=str(application.id),
+                        error=str(e)
+                    )
+            
             return application
             
         except Exception as e:
@@ -166,7 +206,7 @@ class ApplicationService:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
     ) -> Optional[Application]:
-        """Update application information with audit logging.
+        """Update application information with audit logging and real-time events.
         
         Args:
             db: Database session
@@ -181,6 +221,11 @@ class ApplicationService:
             Updated application if found, None otherwise
         """
         try:
+            # Get the current application for comparison
+            old_application = self.repository.get_by_id(db, application_id)
+            if not old_application:
+                return None
+            
             # Only update fields that are provided
             update_data = application_data.dict(exclude_unset=True)
             
@@ -201,6 +246,45 @@ class ApplicationService:
                     client_id=str(client_id),
                     status=application.status
                 )
+                
+                # Publish real-time event for status changes
+                if user_id and 'status' in update_data and old_application.status != application.status:
+                    try:
+                        # Get candidate name for the event
+                        candidate_name = "Unknown"
+                        if hasattr(application, 'candidate') and application.candidate:
+                            candidate_name = application.candidate.name
+                        else:
+                            # Fallback: query candidate separately
+                            from ats_backend.repositories.candidate import CandidateRepository
+                            candidate_repo = CandidateRepository()
+                            candidate = candidate_repo.get_by_id(db, application.candidate_id)
+                            if candidate:
+                                candidate_name = candidate.name
+                        
+                        # Publish status change event asynchronously
+                        asyncio.create_task(
+                            event_publisher.publish_application_status_changed(
+                                tenant_id=client_id,
+                                application_id=application.id,
+                                old_status=old_application.status,
+                                new_status=application.status,
+                                candidate_id=application.candidate_id,
+                                candidate_name=candidate_name,
+                                user_id=user_id,
+                                additional_data={
+                                    "ip_address": ip_address,
+                                    "user_agent": user_agent,
+                                    "changes": update_data
+                                }
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Failed to publish application status change event",
+                            application_id=str(application_id),
+                            error=str(e)
+                        )
             
             return application
             
@@ -317,19 +401,58 @@ class ApplicationService:
         self,
         db: Session,
         application_id: UUID,
-        flag_reason: str
+        flag_reason: str,
+        user_id: Optional[UUID] = None
     ) -> bool:
-        """Flag an application for manual review.
+        """Flag an application for manual review with real-time events.
         
         Args:
             db: Database session
             application_id: Application UUID
             flag_reason: Reason for flagging
+            user_id: User who flagged the application (optional)
             
         Returns:
             True if flagged successfully, False if not found
         """
-        return self.repository.flag_for_review(db, application_id, flag_reason)
+        success = self.repository.flag_for_review(db, application_id, flag_reason)
+        
+        if success:
+            # Publish real-time event
+            try:
+                # Get application and candidate details
+                application = self.repository.get_by_id(db, application_id)
+                if application:
+                    candidate_name = "Unknown"
+                    if hasattr(application, 'candidate') and application.candidate:
+                        candidate_name = application.candidate.name
+                    else:
+                        # Fallback: query candidate separately
+                        from ats_backend.repositories.candidate import CandidateRepository
+                        candidate_repo = CandidateRepository()
+                        candidate = candidate_repo.get_by_id(db, application.candidate_id)
+                        if candidate:
+                            candidate_name = candidate.name
+                    
+                    # Publish flagged event asynchronously
+                    asyncio.create_task(
+                        event_publisher.publish_application_flagged(
+                            tenant_id=application.client_id,
+                            application_id=application.id,
+                            candidate_id=application.candidate_id,
+                            candidate_name=candidate_name,
+                            flag_reason=flag_reason,
+                            user_id=user_id
+                        )
+                    )
+            except Exception as e:
+                logger.warning(
+                    "Failed to publish application flagged event",
+                    application_id=str(application_id),
+                    error=str(e)
+                )
+        
+        return success
     
     def unflag_application(
         self,

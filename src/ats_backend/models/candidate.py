@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, DECIMAL, text
+from sqlalchemy import Column, String, DateTime, ForeignKey, DECIMAL, Boolean, text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import relationship
 
@@ -26,6 +26,7 @@ class Candidate(Base):
     ctc_current = Column(DECIMAL(12, 2), nullable=True)
     ctc_expected = Column(DECIMAL(12, 2), nullable=True)
     status = Column(String(50), default="ACTIVE", nullable=False)
+    is_blacklisted = Column(Boolean, default=False, nullable=False)
     candidate_hash = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

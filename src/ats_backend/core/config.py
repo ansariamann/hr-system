@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     """Application settings with environment variable support."""
     
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[".env.local", ".env"],
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     smtp_username: Optional[str] = Field(default=None, description="SMTP username")
     smtp_password: Optional[str] = Field(default=None, description="SMTP password")
     smtp_use_tls: bool = Field(default=True, description="Use TLS for SMTP")
+    
+    # Security Configuration
+    login_attempts_limit: int = Field(default=5, description="Maximum login attempts before lockout")
+    login_window_minutes: int = Field(default=15, description="Time window for login attempts")
+    lockout_duration_minutes: int = Field(default=30, description="Account lockout duration")
+    token_replay_protection: bool = Field(default=True, description="Enable token replay protection")
     
     @property
     def database_url(self) -> str:
