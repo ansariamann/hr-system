@@ -17,8 +17,10 @@ from .error_handling import (
 from .database import db_manager
 from .redis import get_redis_client
 
-
 logger = get_logger(__name__)
+
+# Store startup time globally
+settings.startup_time = datetime.utcnow()
 
 
 class StartupManager:

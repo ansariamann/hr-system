@@ -1034,3 +1034,412 @@ def monitor_system_performance(self) -> Dict[str, Any]:
             "error": str(e),
             "task_id": self.request.id
         }
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask, name="monitor_system_performance")
+def monitor_system_performance(self):
+    """Monitor system performance and trigger alerts."""
+    try:
+        from ats_backend.core.observability import observability_system
+        from ats_backend.core.alerts import alert_manager
+        import asyncio
+        
+        logger.info("Starting system performance monitoring")
+        
+        # Run async monitoring
+        async def run_monitoring():
+            # Collect performance metrics
+            performance_metrics = await observability_system.collect_performance_metrics()
+            cost_metrics = await observability_system.collect_cost_metrics()
+            
+            # Check for alerts
+            new_alerts = await observability_system.check_alerts()
+            
+            # Process alerts through alert manager
+            notification_results = []
+            for alert in new_alerts:
+                result = await alert_manager.process_alert(alert)
+                notification_results.append(result)
+            
+            return {
+                "performance_metrics_count": len(performance_metrics),
+                "cost_metrics": cost_metrics.to_dict(),
+                "new_alerts": len(new_alerts),
+                "notifications_sent": sum(notification_results),
+                "alerts": [alert.to_dict() for alert in new_alerts]
+            }
+        
+        # Execute monitoring
+        try:
+            loop = asyncio.get_event_loop()
+            result = loop.run_until_complete(run_monitoring())
+        except RuntimeError:
+            result = asyncio.run(run_monitoring())
+        
+        logger.info(
+            "System performance monitoring completed",
+            new_alerts=result["new_alerts"],
+            notifications_sent=result["notifications_sent"]
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error("System performance monitoring failed", error=str(e))
+        raise
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask, name="health_check_workers")
+def health_check_workers(self):
+    """Perform comprehensive health check of workers and system."""
+    try:
+        from ats_backend.core.health import health_checker
+        import asyncio
+        
+        logger.info("Starting worker health check")
+        
+        # Run async health check
+        async def run_health_check():
+            health_report = await health_checker.run_all_checks()
+            return health_report
+        
+        # Execute health check
+        try:
+            loop = asyncio.get_event_loop()
+            health_report = loop.run_until_complete(run_health_check())
+        except RuntimeError:
+            health_report = asyncio.run(run_health_check())
+        
+        # Determine if system is healthy
+        healthy = health_report["overall_status"] in ["healthy", "degraded"]
+        
+        logger.info(
+            "Worker health check completed",
+            overall_status=health_report["overall_status"],
+            healthy_checks=health_report["summary"]["healthy_checks"],
+            total_checks=health_report["summary"]["total_checks"]
+        )
+        
+        return {
+            "healthy": healthy,
+            "overall_status": health_report["overall_status"],
+            "summary": health_report["summary"],
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Worker health check failed", error=str(e))
+        return {
+            "healthy": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask, name="monitor_queue_health")
+def monitor_queue_health(self):
+    """Monitor queue health and alert on issues."""
+    try:
+        from ats_backend.workers.celery_app import task_monitor
+        from ats_backend.core.observability import observability_system
+        from ats_backend.core.alerts import alert_manager, Alert, AlertSeverity
+        import asyncio
+        
+        logger.info("Starting queue health monitoring")
+        
+        # Get queue information
+        queue_info = task_monitor.get_queue_lengths()
+        worker_stats = task_monitor.get_worker_stats()
+        
+        issues = []
+        alerts_triggered = []
+        
+        # Check for queue issues
+        total_queued = queue_info.get("total_queued", 0)
+        total_workers = worker_stats.get("total_workers", 0)
+        
+        if total_workers == 0:
+            alert = Alert(
+                name="no_workers_available",
+                condition="worker_count < 1",
+                severity=AlertSeverity.CRITICAL,
+                threshold=1.0,
+                current_value=0.0,
+                triggered_at=datetime.utcnow(),
+                message="No Celery workers are available",
+                details={"worker_stats": worker_stats, "queue_info": queue_info}
+            )
+            alerts_triggered.append(alert)
+            issues.append("No workers available")
+        
+        if total_queued > 500:
+            alert = Alert(
+                name="critical_queue_depth",
+                condition="queue_depth > 500",
+                severity=AlertSeverity.CRITICAL,
+                threshold=500.0,
+                current_value=total_queued,
+                triggered_at=datetime.utcnow(),
+                message=f"Critical queue backlog: {total_queued} tasks",
+                details={"queue_info": queue_info}
+            )
+            alerts_triggered.append(alert)
+            issues.append(f"Critical queue backlog: {total_queued}")
+        elif total_queued > 100:
+            alert = Alert(
+                name="high_queue_depth",
+                condition="queue_depth > 100",
+                severity=AlertSeverity.WARNING,
+                threshold=100.0,
+                current_value=total_queued,
+                triggered_at=datetime.utcnow(),
+                message=f"High queue backlog: {total_queued} tasks",
+                details={"queue_info": queue_info}
+            )
+            alerts_triggered.append(alert)
+            issues.append(f"High queue backlog: {total_queued}")
+        
+        # Process alerts
+        async def process_alerts():
+            notification_results = []
+            for alert in alerts_triggered:
+                result = await alert_manager.process_alert(alert)
+                notification_results.append(result)
+            return notification_results
+        
+        if alerts_triggered:
+            try:
+                loop = asyncio.get_event_loop()
+                notification_results = loop.run_until_complete(process_alerts())
+            except RuntimeError:
+                notification_results = asyncio.run(process_alerts())
+        else:
+            notification_results = []
+        
+        logger.info(
+            "Queue health monitoring completed",
+            total_queued=total_queued,
+            total_workers=total_workers,
+            issues_count=len(issues),
+            alerts_triggered=len(alerts_triggered),
+            notifications_sent=sum(notification_results)
+        )
+        
+        return {
+            "healthy": len(issues) == 0,
+            "total_queued": total_queued,
+            "total_workers": total_workers,
+            "issues": issues,
+            "alerts_triggered": len(alerts_triggered),
+            "notifications_sent": sum(notification_results),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Queue health monitoring failed", error=str(e))
+        return {
+            "healthy": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask, name="cleanup_stale_tasks")
+def cleanup_stale_tasks(self):
+    """Clean up stale tasks and metrics."""
+    try:
+        from ats_backend.core.metrics import metrics_collector
+        from datetime import timedelta
+        
+        logger.info("Starting stale task cleanup")
+        
+        # Clean up old metrics (older than 24 hours)
+        metrics_collector.cleanup_old_metrics(timedelta(hours=24))
+        
+        # TODO: Add cleanup for stale Celery tasks
+        # This would involve checking for tasks that have been running too long
+        # and potentially terminating them
+        
+        logger.info("Stale task cleanup completed")
+        
+        return {
+            "success": True,
+            "message": "Stale task cleanup completed",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error("Stale task cleanup failed", error=str(e))
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask, name="collect_performance_metrics")
+def collect_performance_metrics(self, operation: Optional[str] = None):
+    """Collect and store performance metrics."""
+    try:
+        from ats_backend.core.observability import observability_system
+        import asyncio
+        
+        logger.info("Starting performance metrics collection", operation=operation)
+        
+        # Run async metrics collection
+        async def run_collection():
+            performance_metrics = await observability_system.collect_performance_metrics(operation)
+            cost_metrics = await observability_system.collect_cost_metrics()
+            
+            return {
+                "performance_metrics": {op: perf.to_dict() for op, perf in performance_metrics.items()},
+                "cost_metrics": cost_metrics.to_dict()
+            }
+        
+        # Execute collection
+        try:
+            loop = asyncio.get_event_loop()
+            result = loop.run_until_complete(run_collection())
+        except RuntimeError:
+            result = asyncio.run(run_collection())
+        
+        logger.info(
+            "Performance metrics collection completed",
+            operation=operation,
+            metrics_count=len(result["performance_metrics"])
+        )
+        
+        return result
+        
+    except Exception as e:
+        logger.error("Performance metrics collection failed", error=str(e))
+        raise
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask, name="generate_observability_report")
+def generate_observability_report(self, hours_back: int = 24):
+    """Generate comprehensive observability report."""
+    try:
+        from ats_backend.core.observability import observability_system
+        import asyncio
+        
+        logger.info("Starting observability report generation", hours_back=hours_back)
+        
+        # Run async report generation
+        async def generate_report():
+            # Get 60-second diagnostic
+            diagnostic_data = await observability_system.get_60_second_diagnostic()
+            
+            # Get historical trends
+            trends = observability_system.get_historical_trends(hours_back)
+            
+            # Get current performance and cost metrics
+            performance_metrics = await observability_system.collect_performance_metrics()
+            cost_metrics = await observability_system.collect_cost_metrics()
+            
+            return {
+                "report_timestamp": datetime.utcnow().isoformat(),
+                "time_range_hours": hours_back,
+                "current_status": {
+                    "overall_status": diagnostic_data.get("overall_status", "unknown"),
+                    "system_health": diagnostic_data.get("system_health", {}),
+                    "active_alerts": diagnostic_data.get("active_alerts", []),
+                    "alert_count": diagnostic_data.get("alert_count", 0)
+                },
+                "performance_summary": {
+                    op: {
+                        "p95_ms": perf.p95_ms,
+                        "error_rate": perf.error_rate,
+                        "throughput_per_second": perf.throughput_per_second,
+                        "count": perf.count
+                    }
+                    for op, perf in performance_metrics.items()
+                },
+                "cost_summary": {
+                    "current_hourly_cost": cost_metrics.total_estimated_cost_per_hour,
+                    "projected_daily_cost": cost_metrics.total_estimated_cost_per_hour * 24,
+                    "projected_monthly_cost": cost_metrics.total_estimated_cost_per_hour * 24 * 30,
+                    "resource_efficiency": cost_metrics.resource_efficiency
+                },
+                "trends": trends,
+                "recommendations": _generate_recommendations(diagnostic_data, performance_metrics, cost_metrics, trends)
+            }
+        
+        # Execute report generation
+        try:
+            loop = asyncio.get_event_loop()
+            report = loop.run_until_complete(generate_report())
+        except RuntimeError:
+            report = asyncio.run(generate_report())
+        
+        logger.info(
+            "Observability report generated",
+            hours_back=hours_back,
+            overall_status=report["current_status"]["overall_status"],
+            alert_count=report["current_status"]["alert_count"]
+        )
+        
+        return report
+        
+    except Exception as e:
+        logger.error("Observability report generation failed", error=str(e))
+        raise
+
+
+def _generate_recommendations(diagnostic_data, performance_metrics, cost_metrics, trends):
+    """Generate recommendations based on observability data."""
+    recommendations = []
+    
+    # Check for performance issues
+    for operation, perf in performance_metrics.items():
+        if perf.p95_ms > 5000:  # 5 seconds
+            recommendations.append({
+                "type": "performance",
+                "priority": "high",
+                "message": f"{operation} P95 response time is {perf.p95_ms:.1f}ms, consider optimization",
+                "operation": operation
+            })
+        
+        if perf.error_rate > 0.05:  # 5%
+            recommendations.append({
+                "type": "reliability",
+                "priority": "critical",
+                "message": f"{operation} error rate is {perf.error_rate*100:.1f}%, investigate immediately",
+                "operation": operation
+            })
+    
+    # Check for cost issues
+    if cost_metrics.total_estimated_cost_per_hour > 10.0:
+        recommendations.append({
+            "type": "cost",
+            "priority": "medium",
+            "message": f"Estimated cost is ${cost_metrics.total_estimated_cost_per_hour:.2f}/hour, consider optimization"
+        })
+    
+    # Check for resource efficiency
+    if cost_metrics.resource_efficiency > 0.8:
+        recommendations.append({
+            "type": "efficiency",
+            "priority": "low",
+            "message": "Resource efficiency is low, consider scaling down or optimizing resource usage"
+        })
+    
+    # Check system health
+    system_health = diagnostic_data.get("system_health", {})
+    if system_health.get("overall_status") == "unhealthy":
+        recommendations.append({
+            "type": "health",
+            "priority": "critical",
+            "message": "System health is unhealthy, immediate attention required"
+        })
+    
+    # Check active alerts
+    alert_count = diagnostic_data.get("alert_count", 0)
+    if alert_count > 0:
+        recommendations.append({
+            "type": "alerts",
+            "priority": "high",
+            "message": f"{alert_count} active alerts require attention"
+        })
+    
+    return recommendations

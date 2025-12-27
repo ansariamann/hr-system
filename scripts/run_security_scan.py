@@ -17,12 +17,13 @@ from ats_backend.security.security_scanner import security_scanner
 from ats_backend.security.rls_validator import rls_validator
 
 
-async def run_comprehensive_scan(output_file: str = None, verbose: bool = False):
+async def run_comprehensive_scan(output_file: str = None, verbose: bool = False, ci_mode: bool = False):
     """Run comprehensive security scan and output results."""
-    print("🔒 Starting comprehensive security scan...")
-    print(f"Database: {settings.postgres_db}")
-    print(f"Environment: {settings.environment}")
-    print("-" * 50)
+    if not ci_mode:
+        print("🔒 Starting comprehensive security scan...")
+        print(f"Database: {settings.postgres_db}")
+        print(f"Environment: {settings.environment}")
+        print("-" * 50)
     
     try:
         # Initialize database
@@ -36,27 +37,130 @@ async def run_comprehensive_scan(output_file: str = None, verbose: bool = False)
             # Generate security report
             security_report = await security_scanner.generate_security_report(scan_result)
             
-            # Print results
-            print_scan_results(scan_result, security_report, verbose)
+            # Run compliance validation
+            compliance_result = await security_scanner.run_compliance_validation(db)
             
-            # Save to file if requested
-            if output_file:
-                save_results_to_file(scan_result, security_report, output_file)
-                print(f"\n📄 Results saved to: {output_file}")
+            # Print results (unless in CI mode)
+            if not ci_mode:
+                print_scan_results(scan_result, security_report, verbose)
+                print_compliance_results(compliance_result, verbose)
+            
+            # Save to file if requested or in CI mode
+            output_path = output_file or ("security-scan-report.json" if ci_mode else None)
+            if output_path:
+                save_results_to_file(scan_result, security_report, compliance_result, output_path)
+                if not ci_mode:
+                    print(f"\n📄 Results saved to: {output_path}")
             
             # Return exit code based on results
-            if scan_result.is_production_ready():
-                print("\n✅ System is PRODUCTION READY")
+            is_ready = scan_result.is_production_ready() and compliance_result.get("overall_status") == "PASS"
+            if is_ready:
+                if not ci_mode:
+                    print("\n✅ System is PRODUCTION READY")
                 return 0
             else:
-                print(f"\n❌ System has {scan_result.critical_violations} CRITICAL VIOLATIONS")
+                critical_violations = scan_result.critical_violations + compliance_result.get("critical_violations", 0)
+                if not ci_mode:
+                    print(f"\n❌ System has {critical_violations} CRITICAL VIOLATIONS")
                 return 1
                 
     except Exception as e:
-        print(f"\n💥 Security scan failed: {str(e)}")
+        if not ci_mode:
+            print(f"\n💥 Security scan failed: {str(e)}")
         return 1
     finally:
         db_manager.close()
+
+
+async def run_compliance_validation(framework: str = "ALL", output_file: str = None, verbose: bool = False):
+    """Run compliance validation against security frameworks."""
+    print(f"🔍 Running compliance validation for {framework}...")
+    print("-" * 50)
+    
+    try:
+        # Initialize database
+        db_manager.initialize()
+        
+        # Get database session
+        with db_manager.get_session() as db:
+            # Run compliance validation
+            compliance_result = await security_scanner.run_compliance_validation(db, framework)
+            
+            # Print results
+            print_compliance_results(compliance_result, verbose)
+            
+            # Save to file if requested
+            if output_file:
+                with open(output_file, 'w') as f:
+                    json.dump(compliance_result, f, indent=2, default=str)
+                print(f"\n📄 Results saved to: {output_file}")
+            
+            # Return exit code based on results
+            if compliance_result.get("overall_status") == "PASS":
+                print(f"\n✅ Compliance validation PASSED for {framework}")
+                return 0
+            else:
+                critical_violations = compliance_result.get("critical_violations", 0)
+                print(f"\n❌ Compliance validation FAILED with {critical_violations} critical violations")
+                return 1
+                
+    except Exception as e:
+        print(f"\n💥 Compliance validation failed: {str(e)}")
+        return 1
+    finally:
+        db_manager.close()
+
+
+async def run_penetration_test(test_type: str = "basic", verbose: bool = False):
+    """Run automated penetration testing."""
+    print(f"🎯 Running penetration test: {test_type}")
+    print("-" * 50)
+    
+    try:
+        # Initialize database
+        db_manager.initialize()
+        
+        # Get database session
+        with db_manager.get_session() as db:
+            # Run penetration test
+            pentest_result = await security_scanner.run_penetration_test(db, test_type)
+            
+            # Print results
+            print_pentest_results(pentest_result, verbose)
+            
+            # Return exit code based on results
+            if pentest_result.get("overall_status") == "PASS":
+                print(f"\n✅ Penetration test PASSED")
+                return 0
+            else:
+                vulnerabilities = pentest_result.get("vulnerabilities_found", 0)
+                print(f"\n❌ Penetration test found {vulnerabilities} vulnerabilities")
+                return 1
+                
+    except Exception as e:
+        print(f"\n💥 Penetration test failed: {str(e)}")
+        return 1
+    finally:
+        db_manager.close()
+
+
+def print_pentest_results(pentest_result, verbose: bool = False):
+    """Print formatted penetration test results."""
+    print(f"Test Type: {pentest_result.get('test_type', 'Unknown')}")
+    print(f"Status: {pentest_result.get('overall_status', 'Unknown')}")
+    print(f"Vulnerabilities Found: {pentest_result.get('vulnerabilities_found', 0)}")
+    print(f"Tests Executed: {pentest_result.get('tests_executed', 0)}")
+    
+    if verbose or pentest_result.get('vulnerabilities_found', 0) > 0:
+        print("\n🎯 Penetration Test Results:")
+        for test in pentest_result.get('test_results', []):
+            status_icon = "✅" if test['passed'] else "❌"
+            print(f"  {status_icon} {test['test_name']}")
+            
+            if not test['passed'] and test.get('vulnerabilities'):
+                for vuln in test['vulnerabilities']:
+                    severity_icon = "🔴" if vuln.get('severity') == "CRITICAL" else "🟡"
+                    print(f"    {severity_icon} {vuln.get('type', 'Unknown')}: {vuln.get('description', 'No description')}")
 
 
 async def run_targeted_test(test_type: str, verbose: bool = False):
@@ -161,12 +265,40 @@ def print_test_results(test_result, verbose: bool = False):
                 print(f"  {key}: {value}")
 
 
-def save_results_to_file(scan_result, security_report, output_file: str):
+def print_compliance_results(compliance_result, verbose: bool = False):
+    """Print formatted compliance results."""
+    print(f"\n📋 COMPLIANCE VALIDATION:")
+    print(f"Overall Status: {compliance_result.get('overall_status', 'UNKNOWN')}")
+    print(f"Compliance Score: {compliance_result.get('compliance_score', 0):.1%}")
+    print(f"Critical Violations: {compliance_result.get('critical_violations', 0)}")
+    print(f"Total Checks: {compliance_result.get('total_checks', 0)}")
+    print(f"Passed Checks: {compliance_result.get('passed_checks', 0)}")
+    
+    if verbose or compliance_result.get('critical_violations', 0) > 0:
+        print("\n📋 Compliance Check Results:")
+        for check in compliance_result.get('check_results', []):
+            status_icon = "✅" if check['passed'] else "❌"
+            print(f"  {status_icon} {check['check_name']} - {check['category']}")
+            
+            if not check['passed'] and check.get('violations'):
+                for violation in check['violations']:
+                    print(f"    - {violation.get('type', 'Unknown')}: {violation.get('description', 'No description')}")
+    
+    if compliance_result.get('recommendations'):
+        print("\n💡 Compliance Recommendations:")
+        for rec in compliance_result['recommendations']:
+            priority_icon = "🔴" if rec['priority'] == "CRITICAL" else "🟡"
+            print(f"  {priority_icon} [{rec['priority']}] {rec['description']}")
+
+
+def save_results_to_file(scan_result, security_report, compliance_result, output_file: str):
     """Save scan results to JSON file."""
     output_data = {
         "scan_result": scan_result.to_dict(),
         "security_report": security_report,
-        "generated_at": datetime.utcnow().isoformat()
+        "compliance_result": compliance_result,
+        "generated_at": datetime.utcnow().isoformat(),
+        "passed": scan_result.is_production_ready() and compliance_result.get("overall_status") == "PASS"
     }
     
     with open(output_file, 'w') as f:
@@ -182,6 +314,20 @@ def main():
     scan_parser = subparsers.add_parser('scan', help='Run comprehensive security scan')
     scan_parser.add_argument('--output', '-o', help='Output file for results (JSON)')
     scan_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    scan_parser.add_argument('--ci-mode', action='store_true', help='CI mode (minimal output)')
+    
+    # Compliance validation command
+    compliance_parser = subparsers.add_parser('compliance', help='Run compliance validation')
+    compliance_parser.add_argument('--output', '-o', help='Output file for results (JSON)')
+    compliance_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
+    compliance_parser.add_argument('--framework', choices=['SOC2', 'ISO27001', 'GDPR', 'ALL'], 
+                                  default='ALL', help='Compliance framework to validate against')
+    
+    # Penetration testing command
+    pentest_parser = subparsers.add_parser('pentest', help='Run penetration testing')
+    pentest_parser.add_argument('type', choices=['basic', 'advanced', 'rls_focused'], 
+                               default='basic', help='Type of penetration test to run')
+    pentest_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose output')
     
     # Targeted test command
     test_parser = subparsers.add_parser('test', help='Run targeted security test')
@@ -208,7 +354,11 @@ def main():
     
     # Run appropriate command
     if args.command == 'scan':
-        return asyncio.run(run_comprehensive_scan(args.output, args.verbose))
+        return asyncio.run(run_comprehensive_scan(args.output, args.verbose, getattr(args, 'ci_mode', False)))
+    elif args.command == 'compliance':
+        return asyncio.run(run_compliance_validation(args.framework, args.output, args.verbose))
+    elif args.command == 'pentest':
+        return asyncio.run(run_penetration_test(args.type, args.verbose))
     elif args.command == 'test':
         return asyncio.run(run_targeted_test(args.type, args.verbose))
     elif args.command == 'validate':

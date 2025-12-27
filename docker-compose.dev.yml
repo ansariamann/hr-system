@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  postgres:
+    container_name: ats-postgres-dev
+    environment:
+      POSTGRES_DB: ats_dev
+      POSTGRES_USER: ats_dev_user
+      POSTGRES_PASSWORD: dev_password_change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./backups/dev:/backups
+
+  redis:
+    container_name: ats-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data_dev:/data
+
+  api:
+    container_name: ats-api-dev
+    environment:
+      ENVIRONMENT: development
+      POSTGRES_DB: ats_dev
+      POSTGRES_USER: ats_dev_user
+      POSTGRES_PASSWORD: dev_password_change_me
+      REDIS_DB: 0
+      LOG_LEVEL: DEBUG
+      DEBUG: "true"
+      BACKUP_PATH: /app/backups/dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backups/dev:/app/backups/dev
+
+  worker:
+    environment:
+      ENVIRONMENT: development
+      POSTGRES_DB: ats_dev
+      POSTGRES_USER: ats_dev_user
+      POSTGRES_PASSWORD: dev_password_change_me
+      REDIS_DB: 0
+      LOG_LEVEL: DEBUG
+      BACKUP_PATH: /app/backups/dev
+    volumes:
+      - ./backups/dev:/app/backups/dev
+    deploy:
+      replicas: 1
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  redis_data_dev:
+    driver: local

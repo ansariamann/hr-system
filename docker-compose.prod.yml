@@ -1,0 +1,217 @@
+version: "3.8"
+
+services:
+  postgres:
+    container_name: ats-postgres-prod
+    environment:
+      POSTGRES_DB: ats_production
+      POSTGRES_USER: ats_production_user
+      POSTGRES_PASSWORD: ${PRODUCTION_DB_PASSWORD}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_data_production:/var/lib/postgresql/data
+      - ./backups/production:/backups
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  redis:
+    container_name: ats-redis-prod
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data_production:/data
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  api:
+    container_name: ats-api-prod
+    environment:
+      ENVIRONMENT: production
+      POSTGRES_DB: ats_production
+      POSTGRES_USER: ats_production_user
+      POSTGRES_PASSWORD: ${PRODUCTION_DB_PASSWORD}
+      REDIS_DB: 2
+      LOG_LEVEL: WARNING
+      DEBUG: "false"
+      SECRET_KEY: ${PRODUCTION_SECRET_KEY}
+      BACKUP_PATH: /app/backups/production
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./backups/production:/app/backups/production
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
+  worker:
+    environment:
+      ENVIRONMENT: production
+      POSTGRES_DB: ats_production
+      POSTGRES_USER: ats_production_user
+      POSTGRES_PASSWORD: ${PRODUCTION_DB_PASSWORD}
+      REDIS_DB: 2
+      LOG_LEVEL: WARNING
+      SECRET_KEY: ${PRODUCTION_SECRET_KEY}
+      BACKUP_PATH: /app/backups/production
+    volumes:
+      - ./backups/production:/app/backups/production
+    restart: always
+    deploy:
+      replicas: 4
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+  # Production-specific monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ats-prometheus-prod
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - prometheus_data_production:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=90d"
+      - "--web.enable-lifecycle"
+      - "--alertmanager.url=http://alertmanager:9093"
+    restart: always
+    depends_on:
+      - alertmanager
+
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: ats-alertmanager-prod
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data_production:/alertmanager
+    environment:
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - DEFAULT_ALERT_EMAIL=${DEFAULT_ALERT_EMAIL}
+      - CRITICAL_ALERT_EMAIL=${CRITICAL_ALERT_EMAIL}
+      - WARNING_ALERT_EMAIL=${WARNING_ALERT_EMAIL}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    restart: always
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ats-grafana-prod
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data_production:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    restart: always
+    depends_on:
+      - prometheus
+
+  # System metrics exporter
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: ats-node-exporter-prod
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    restart: always
+
+  # PostgreSQL metrics exporter
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: ats-postgres-exporter-prod
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${PRODUCTION_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+    restart: always
+    depends_on:
+      - postgres
+
+  # Redis metrics exporter
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: ats-redis-exporter-prod
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    restart: always
+    depends_on:
+      - redis
+
+  # Log aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: ats-loki-prod
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data_production:/loki
+      - ./monitoring/loki-config.yml:/etc/loki/local-config.yaml
+    command: -config.file=/etc/loki/local-config.yaml
+    restart: always
+
+  # Log collection
+  promtail:
+    image: grafana/promtail:latest
+    container_name: ats-promtail-prod
+    volumes:
+      - /var/log:/var/log:ro
+      - ./monitoring/promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    restart: always
+    depends_on:
+      - loki
+
+volumes:
+  postgres_data_production:
+    driver: local
+  redis_data_production:
+    driver: local
+  prometheus_data_production:
+    driver: local
+  grafana_data_production:
+    driver: local
+  alertmanager_data_production:
+    driver: local
+  loki_data_production:
+    driver: local

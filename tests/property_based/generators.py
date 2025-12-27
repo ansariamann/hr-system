@@ -399,3 +399,183 @@ def email_content(draw) -> Dict[str, Any]:
             max_size=5
         ))
     }
+
+# Observability-specific generators
+@composite
+def performance_metrics_strategy(draw):
+    """Generate realistic performance metrics."""
+    from src.ats_backend.core.observability import PerformanceMetrics
+    
+    operation = draw(st.text(min_size=1, max_size=50))
+    
+    # Generate realistic timing values with proper ordering
+    min_ms = draw(st.floats(min_value=1.0, max_value=100.0))
+    p50_ms = draw(st.floats(min_value=min_ms, max_value=min_ms * 5))
+    p95_ms = draw(st.floats(min_value=p50_ms, max_value=p50_ms * 3))
+    p99_ms = draw(st.floats(min_value=p95_ms, max_value=p95_ms * 2))
+    max_ms = draw(st.floats(min_value=p99_ms, max_value=p99_ms * 2))
+    avg_ms = draw(st.floats(min_value=min_ms, max_value=p95_ms))
+    
+    return PerformanceMetrics(
+        operation=operation,
+        p50_ms=p50_ms,
+        p95_ms=p95_ms,
+        p99_ms=p99_ms,
+        avg_ms=avg_ms,
+        min_ms=min_ms,
+        max_ms=max_ms,
+        count=draw(st.integers(min_value=1, max_value=10000)),
+        error_rate=draw(st.floats(min_value=0.0, max_value=1.0)),
+        throughput_per_second=draw(st.floats(min_value=0.1, max_value=1000.0))
+    )
+
+
+@composite
+def cost_metrics_strategy(draw):
+    """Generate realistic cost metrics."""
+    from src.ats_backend.core.observability import CostMetrics
+    
+    cpu_cost = draw(st.floats(min_value=0.0, max_value=10.0))
+    memory_cost = draw(st.floats(min_value=0.0, max_value=5.0))
+    storage_cost = draw(st.floats(min_value=0.0, max_value=2.0))
+    network_cost = draw(st.floats(min_value=0.0, max_value=1.0))
+    
+    return CostMetrics(
+        cpu_cost_per_hour=cpu_cost,
+        memory_cost_per_hour=memory_cost,
+        storage_cost_per_gb=storage_cost,
+        network_cost_per_gb=network_cost,
+        total_estimated_cost_per_hour=cpu_cost + memory_cost + storage_cost + network_cost,
+        resource_efficiency=draw(st.floats(min_value=0.0, max_value=1.0))
+    )
+
+
+@composite
+def alert_strategy(draw):
+    """Generate realistic alerts."""
+    from src.ats_backend.core.observability import Alert, AlertSeverity
+    
+    return Alert(
+        name=draw(st.text(min_size=1, max_size=50)),
+        condition=draw(st.text(min_size=5, max_size=100)),
+        severity=draw(st.sampled_from(list(AlertSeverity))),
+        threshold=draw(st.floats(min_value=0.1, max_value=1000.0)),
+        current_value=draw(st.floats(min_value=0.0, max_value=2000.0)),
+        triggered_at=draw(st.datetimes(
+            min_value=datetime.now() - timedelta(days=7),
+            max_value=datetime.now()
+        )),
+        message=draw(st.text(min_size=1, max_size=200)),
+        details=draw(st.dictionaries(
+            st.text(min_size=1, max_size=20),
+            st.one_of(st.text(), st.integers(), st.floats()),
+            min_size=0,
+            max_size=5
+        ))
+    )
+
+
+@composite
+def system_metrics_strategy(draw):
+    """Generate realistic system metrics."""
+    return {
+        "cpu_percent": draw(st.floats(min_value=0.0, max_value=100.0)),
+        "memory_percent": draw(st.floats(min_value=0.0, max_value=100.0)),
+        "disk_percent": draw(st.floats(min_value=0.0, max_value=100.0)),
+        "load_average": draw(st.lists(
+            st.floats(min_value=0.0, max_value=10.0),
+            min_size=3,
+            max_size=3
+        )),
+        "network_io": {
+            "bytes_sent": draw(st.integers(min_value=0, max_value=10**12)),
+            "bytes_recv": draw(st.integers(min_value=0, max_value=10**12))
+        }
+    }
+
+
+@composite
+def alert_rule_strategy(draw):
+    """Generate realistic alert rules."""
+    from src.ats_backend.core.alerts import AlertRule, AlertSeverity, NotificationChannel
+    
+    return AlertRule(
+        name=draw(st.text(min_size=1, max_size=50)),
+        condition=draw(st.text(min_size=5, max_size=100)),
+        threshold=draw(st.floats(min_value=0.1, max_value=1000.0)),
+        severity=draw(st.sampled_from(list(AlertSeverity))),
+        enabled=draw(st.booleans()),
+        cooldown_minutes=draw(st.integers(min_value=1, max_value=60)),
+        notification_channels=draw(st.lists(
+            st.sampled_from(list(NotificationChannel)),
+            min_size=1,
+            max_size=3,
+            unique=True
+        ))
+    )
+
+
+@composite
+def queue_metrics_strategy(draw):
+    """Generate realistic queue metrics."""
+    queue_names = ["resume_processing", "email_processing", "celery", "default"]
+    
+    return {
+        "queues": {
+            queue: draw(st.integers(min_value=0, max_value=1000))
+            for queue in draw(st.lists(
+                st.sampled_from(queue_names),
+                min_size=1,
+                max_size=len(queue_names),
+                unique=True
+            ))
+        },
+        "total_queued": draw(st.integers(min_value=0, max_value=5000)),
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@composite
+def worker_metrics_strategy(draw):
+    """Generate realistic worker metrics."""
+    worker_count = draw(st.integers(min_value=0, max_value=10))
+    
+    return {
+        "total_workers": worker_count,
+        "active_tasks": draw(st.integers(min_value=0, max_value=worker_count * 10)),
+        "workers": {
+            f"worker_{i}": {
+                "status": draw(st.sampled_from(["online", "offline", "busy"])),
+                "active_tasks": draw(st.integers(min_value=0, max_value=10)),
+                "processed_tasks": draw(st.integers(min_value=0, max_value=1000))
+            }
+            for i in range(worker_count)
+        },
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+
+@composite
+def diagnostic_data_strategy(draw):
+    """Generate realistic diagnostic data."""
+    return {
+        "timestamp": datetime.utcnow().isoformat(),
+        "collection_time_seconds": draw(st.floats(min_value=0.1, max_value=60.0)),
+        "overall_status": draw(st.sampled_from(["healthy", "degraded", "unhealthy", "critical"])),
+        "system_health": draw(system_metrics_strategy()),
+        "performance_summary": draw(st.dictionaries(
+            st.text(min_size=1, max_size=20),
+            performance_metrics_strategy(),
+            min_size=0,
+            max_size=5
+        )),
+        "queue_status": draw(queue_metrics_strategy()),
+        "worker_status": draw(worker_metrics_strategy()),
+        "cost_summary": draw(cost_metrics_strategy()),
+        "active_alerts": draw(st.lists(
+            alert_strategy(),
+            min_size=0,
+            max_size=10
+        )),
+        "alert_count": draw(st.integers(min_value=0, max_value=10))
+    }

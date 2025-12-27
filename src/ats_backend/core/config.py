@@ -54,6 +54,10 @@ class Settings(BaseSettings):
         description="Supported resume file extensions"
     )
     
+    # Storage Configuration
+    storage_path: str = Field(default="./storage", description="Path for file storage")
+    backup_path: str = Field(default="./backups", description="Path for database backups")
+    
     # SMTP Configuration (for testing)
     smtp_host: str = Field(default="localhost", description="SMTP server host")
     smtp_port: int = Field(default=587, description="SMTP server port")
@@ -93,3 +97,8 @@ class Settings(BaseSettings):
 
 # Global settings instance
 settings = Settings()
+
+
+def get_settings() -> Settings:
+    """Get the global settings instance."""
+    return settings

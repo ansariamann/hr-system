@@ -394,7 +394,130 @@ class SecurityScanner:
         recent_scans = sorted(self.scan_history, key=lambda x: x.timestamp, reverse=True)[:limit]
         return [scan.to_dict() for scan in recent_scans]
     
-    def get_security_metrics(self) -> Dict[str, Any]:
+    async def run_compliance_validation(self, db: Session, framework: str = "ALL") -> Dict[str, Any]:
+        """Run compliance validation against security frameworks.
+        
+        Args:
+            db: Database session
+            framework: Compliance framework to validate against
+            
+        Returns:
+            Compliance validation results
+        """
+        logger.info("Starting compliance validation", framework=framework)
+        
+        compliance_checks = []
+        
+        # SOC 2 Type II Controls
+        if framework in ["SOC2", "ALL"]:
+            compliance_checks.extend([
+                await self._check_access_controls(db),
+                await self._check_data_encryption(db),
+                await self._check_audit_logging(db),
+                await self._check_backup_procedures(db),
+                await self._check_incident_response(db)
+            ])
+        
+        # ISO 27001 Controls
+        if framework in ["ISO27001", "ALL"]:
+            compliance_checks.extend([
+                await self._check_information_security_policy(db),
+                await self._check_risk_management(db),
+                await self._check_supplier_relationships(db),
+                await self._check_business_continuity(db)
+            ])
+        
+        # GDPR Requirements
+        if framework in ["GDPR", "ALL"]:
+            compliance_checks.extend([
+                await self._check_data_protection_by_design(db),
+                await self._check_consent_management(db),
+                await self._check_data_subject_rights(db),
+                await self._check_data_breach_notification(db)
+            ])
+        
+        # Calculate overall compliance
+        total_checks = len(compliance_checks)
+        passed_checks = sum(1 for check in compliance_checks if check['passed'])
+        critical_violations = sum(1 for check in compliance_checks 
+                                if not check['passed'] and check.get('severity') == 'CRITICAL')
+        
+        compliance_score = passed_checks / total_checks if total_checks > 0 else 0
+        overall_status = "PASS" if critical_violations == 0 and compliance_score >= 0.8 else "FAIL"
+        
+        # Generate recommendations
+        recommendations = []
+        for check in compliance_checks:
+            if not check['passed']:
+                recommendations.append({
+                    "priority": check.get('severity', 'MEDIUM'),
+                    "category": check['category'],
+                    "description": f"Failed compliance check: {check['check_name']}",
+                    "action": check.get('remediation', 'Review and fix compliance issue')
+                })
+        
+        return {
+            "framework": framework,
+            "overall_status": overall_status,
+            "compliance_score": compliance_score,
+            "total_checks": total_checks,
+            "passed_checks": passed_checks,
+            "critical_violations": critical_violations,
+            "check_results": compliance_checks,
+            "recommendations": recommendations,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    
+    async def run_penetration_test(self, db: Session, test_type: str = "basic") -> Dict[str, Any]:
+        """Run automated penetration testing.
+        
+        Args:
+            db: Database session
+            test_type: Type of penetration test to run
+            
+        Returns:
+            Penetration test results
+        """
+        logger.info("Starting penetration test", test_type=test_type)
+        
+        test_results = []
+        
+        if test_type in ["basic", "advanced"]:
+            # Basic penetration tests
+            test_results.extend([
+                await self._test_authentication_bypass(db),
+                await self._test_authorization_bypass(db),
+                await self._test_input_validation_bypass(db),
+                await self._test_session_management(db)
+            ])
+        
+        if test_type in ["advanced", "rls_focused"]:
+            # Advanced RLS-focused tests
+            test_results.extend([
+                await self._test_rls_policy_bypass(db),
+                await self._test_privilege_escalation(db),
+                await self._test_data_exfiltration(db),
+                await self._test_injection_attacks(db)
+            ])
+        
+        # Calculate results
+        tests_executed = len(test_results)
+        vulnerabilities_found = sum(len(test.get('vulnerabilities', [])) for test in test_results)
+        critical_vulns = sum(1 for test in test_results 
+                           for vuln in test.get('vulnerabilities', [])
+                           if vuln.get('severity') == 'CRITICAL')
+        
+        overall_status = "PASS" if critical_vulns == 0 else "FAIL"
+        
+        return {
+            "test_type": test_type,
+            "overall_status": overall_status,
+            "tests_executed": tests_executed,
+            "vulnerabilities_found": vulnerabilities_found,
+            "critical_vulnerabilities": critical_vulns,
+            "test_results": test_results,
+            "timestamp": datetime.utcnow().isoformat()
+        }
         """Get security metrics from scan history.
         
         Returns:

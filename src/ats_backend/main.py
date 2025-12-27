@@ -35,6 +35,7 @@ from ats_backend.api.candidates import router as candidates_router
 from ats_backend.api.applications import router as applications_router
 from ats_backend.api.security import router as security_router
 from ats_backend.api.sse import router as sse_router
+from ats_backend.api.observability import router as observability_router
 
 # Configure logging
 configure_logging()
@@ -233,6 +234,7 @@ app.include_router(candidates_router)
 app.include_router(applications_router)
 app.include_router(security_router)
 app.include_router(sse_router)
+app.include_router(observability_router)
 
 
 @app.get("/health")

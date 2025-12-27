@@ -1,0 +1,175 @@
+# Prometheus alert rules for ATS Backend
+groups:
+  - name: ats_backend_alerts
+    rules:
+      # High-level service availability
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} has been down for more than 1 minute"
+
+      # API performance alerts
+      - alert: HighAPIResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High API response time"
+          description: "95th percentile response time is {{ $value }}s for the last 5 minutes"
+
+      - alert: HighAPIErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API error rate"
+          description: "API error rate is {{ $value | humanizePercentage }} for the last 5 minutes"
+
+      # Queue depth alerts
+      - alert: HighQueueDepth
+        expr: celery_queue_length > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Celery queue depth"
+          description: "Queue {{ $labels.queue }} has {{ $value }} tasks pending"
+
+      - alert: CriticalQueueDepth
+        expr: celery_queue_length > 500
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical Celery queue depth"
+          description: "Queue {{ $labels.queue }} has {{ $value }} tasks pending - system may be overloaded"
+
+      # Worker availability
+      - alert: NoWorkersAvailable
+        expr: celery_workers_active == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Celery workers available"
+          description: "No active Celery workers detected - task processing stopped"
+
+      # Database alerts
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High database connection usage"
+          description: "Database connection usage is {{ $value | humanizePercentage }}"
+
+      - alert: DatabaseSlowQueries
+        expr: rate(pg_stat_database_tup_returned[5m]) / rate(pg_stat_database_tup_fetched[5m]) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database queries are slow"
+          description: "Database query efficiency is low: {{ $value | humanizePercentage }}"
+
+      # System resource alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+
+      # Redis alerts
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis high memory usage"
+          description: "Redis memory usage is {{ $value | humanizePercentage }}"
+
+      - alert: RedisConnectionsHigh
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Redis connections"
+          description: "Redis has {{ $value }} connected clients"
+
+      # Resume processing alerts
+      - alert: HighOCRFallbackRate
+        expr: rate(resume_ocr_fallback_total[10m]) / rate(resume_parse_total[10m]) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High OCR fallback rate"
+          description: "OCR fallback rate is {{ $value | humanizePercentage }} - text extraction may be failing"
+
+      - alert: ResumeParsingSlowdown
+        expr: histogram_quantile(0.95, rate(resume_parse_duration_seconds_bucket[10m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Resume parsing slowdown"
+          description: "95th percentile resume parsing time is {{ $value }}s"
+
+      # Cost monitoring alerts
+      - alert: HighEstimatedCost
+        expr: estimated_cost_per_hour > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High estimated operational cost"
+          description: "Estimated cost is ${{ $value }}/hour - review resource usage"
+
+      # Security alerts
+      - alert: HighFailedAuthAttempts
+        expr: rate(auth_failures_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High authentication failure rate"
+          description: "{{ $value }} authentication failures per second - possible attack"
+
+      - alert: RLSBypassAttempt
+        expr: increase(rls_bypass_attempts_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RLS bypass attempt detected"
+          description: "{{ $value }} RLS bypass attempts detected - immediate investigation required"
