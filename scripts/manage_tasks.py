@@ -244,12 +244,12 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python manage-tasks.py list-active
-  python manage-tasks.py status abc123-task-id
-  python manage-tasks.py cancel abc123-task-id
-  python manage-tasks.py list-queues
-  python manage-tasks.py list-workers
-  python manage-tasks.py retry-resume client-id job-id
+  python manage_tasks.py list-active
+  python manage_tasks.py status abc123-task-id
+  python manage_tasks.py cancel abc123-task-id
+  python manage_tasks.py list-queues
+  python manage_tasks.py list-workers
+  python manage_tasks.py retry-resume client-id job-id
         """
     )
     

@@ -4,6 +4,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from datetime import timedelta
 import structlog
@@ -223,6 +224,13 @@ app = FastAPI(
 # Add middleware in correct order (last added = first executed)
 app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(LoggingMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(AbuseProtectionMiddleware)
 app.add_middleware(InputSanitizationMiddleware)
@@ -265,10 +273,10 @@ async def health_check():
         
         # Test Redis connectivity
         try:
-            from ats_backend.core.redis import get_redis_client
-            redis_client = await get_redis_client()
+            from ats_backend.core.redis import get_redis
+            redis_client = await get_redis()
             await redis_client.ping()
-            await redis_client.close()
+            # Redis client managed by RedisManager, do not close here
             health_status["redis"] = "healthy"
         except Exception as e:
             health_status["redis"] = f"unhealthy: {str(e)}"

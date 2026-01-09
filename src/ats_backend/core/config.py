@@ -1,6 +1,7 @@
 """Application configuration management."""
 
 from typing import Optional, List
+from datetime import datetime
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -70,6 +71,9 @@ class Settings(BaseSettings):
     login_window_minutes: int = Field(default=15, description="Time window for login attempts")
     lockout_duration_minutes: int = Field(default=30, description="Account lockout duration")
     token_replay_protection: bool = Field(default=True, description="Enable token replay protection")
+    
+    # Runtime Configuration
+    startup_time: Optional[datetime] = Field(default=None, description="System startup time")
     
     @property
     def database_url(self) -> str:

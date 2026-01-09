@@ -121,7 +121,7 @@
 
 3. **Clear stuck tasks if needed:**
    ```bash
-   python scripts/manage-tasks.py clear-stuck
+   python scripts/manage_tasks.py clear-stuck
    ```
 
 ---
@@ -373,8 +373,8 @@ docker-compose -f docker-compose.prod.yml up --scale worker=2 -d
 **Clear stuck tasks:**
 
 ```bash
-python scripts/manage-tasks.py clear-stuck
-python scripts/manage-tasks.py purge-failed
+python scripts/manage_tasks.py clear-stuck
+python scripts/manage_tasks.py purge-failed
 ```
 
 ### Queue Monitoring
@@ -392,7 +392,7 @@ curl http://localhost:8002/monitoring/diagnostic | jq '.queue_status'
 docker logs ats-worker-prod-1 --follow
 
 # Check task statistics
-python scripts/manage-tasks.py stats
+python scripts/manage_tasks.py stats
 ```
 
 ---

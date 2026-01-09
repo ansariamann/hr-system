@@ -5,6 +5,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, validator
+from ats_backend.schemas.candidate import CandidateResponse
 
 
 class ApplicationBase(BaseModel):
@@ -78,6 +79,7 @@ class ApplicationResponse(ApplicationBase):
     created_at: datetime
     updated_at: datetime
     is_deleted: bool = Field(description="Whether application is soft deleted")
+    candidate: Optional[CandidateResponse] = None
     
     class Config:
         from_attributes = True

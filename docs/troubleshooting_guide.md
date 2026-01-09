@@ -193,10 +193,10 @@ docker logs ats-worker-prod-1 --tail 50 | grep ERROR
 
    ```bash
    # Check for long-running tasks
-   python scripts/manage-tasks.py list-active
+   python scripts/manage_tasks.py list-active
 
    # Solution: Clear stuck tasks
-   python scripts/manage-tasks.py clear-stuck
+   python scripts/manage_tasks.py clear-stuck
    ```
 
 ### Symptom: Resume Processing Failures

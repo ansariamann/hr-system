@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 import structlog
 
@@ -48,7 +48,7 @@ class ApplicationRepository(AuditedRepository[Application]):
         if not include_deleted:
             query = query.filter(Application.deleted_at.is_(None))
         
-        return query.all()
+        return query.options(joinedload(Application.candidate)).all()
     
     def get_by_status(
         self, 
@@ -82,7 +82,7 @@ class ApplicationRepository(AuditedRepository[Application]):
         if not include_deleted:
             query = query.filter(Application.deleted_at.is_(None))
         
-        return query.offset(skip).limit(limit).all()
+        return query.options(joinedload(Application.candidate)).offset(skip).limit(limit).all()
     
     def get_flagged_applications(
         self, 
@@ -111,6 +111,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                     Application.deleted_at.is_(None)
                 )
             )
+            .options(joinedload(Application.candidate))
             .offset(skip)
             .limit(limit)
             .all()
@@ -262,6 +263,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                     Application.deleted_at.is_(None)
                 )
             )
+            .options(joinedload(Application.candidate))
             .offset(skip)
             .limit(limit)
             .all()
@@ -293,6 +295,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                     Application.deleted_at.isnot(None)
                 )
             )
+            .options(joinedload(Application.candidate))
             .offset(skip)
             .limit(limit)
             .all()

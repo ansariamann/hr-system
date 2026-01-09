@@ -12,33 +12,33 @@ install: ## Install dependencies
 test: test-property ## Run property-based tests (default)
 
 test-unit: ## Run unit tests only
-	pytest tests/ -m "unit" -v
+	python -m pytest tests/ -m "unit" -v
 
 test-property: ## Run property-based tests only
-	HYPOTHESIS_PROFILE=production_hardening pytest tests/property_based/ -m "property_test" -v
+	HYPOTHESIS_PROFILE=production_hardening python -m pytest tests/property_based/ -m "property_test" -v
 
 test-property-dev: ## Run property-based tests in development mode (more examples)
-	HYPOTHESIS_PROFILE=dev pytest tests/property_based/ -m "property_test" -v
+	HYPOTHESIS_PROFILE=dev python -m pytest tests/property_based/ -m "property_test" -v
 
 test-property-ci: ## Run property-based tests in CI mode (deterministic)
-	CI=1 HYPOTHESIS_PROFILE=ci pytest tests/property_based/ -m "property_test" -v --tb=short
+	CI=1 HYPOTHESIS_PROFILE=ci python -m pytest tests/property_based/ -m "property_test" -v --tb=short
 
 test-integration: ## Run integration tests only
-	pytest tests/ -m "integration" -v
+	python -m pytest tests/ -m "integration" -v
 
 test-all: ## Run all tests
-	pytest tests/ -v
+	python -m pytest tests/ -v
 
 test-coverage: ## Run tests with coverage report
-	pytest tests/ --cov=src/ats_backend --cov-report=html --cov-report=term
+	python -m pytest tests/ --cov=src/ats_backend --cov-report=html --cov-report=term
 
 lint: ## Run linting
-	flake8 src/ tests/
-	mypy src/
+	python -m flake8 src/ tests/
+	python -m mypy src/
 
 format: ## Format code
-	black src/ tests/
-	isort src/ tests/
+	python -m black src/ tests/
+	python -m isort src/ tests/
 
 clean: ## Clean up generated files
 	find . -type f -name "*.pyc" -delete

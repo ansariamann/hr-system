@@ -26,13 +26,14 @@ WORKDIR /app
 COPY pyproject.toml ./
 
 # Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -e .[dev]
-
 # Copy application code
 COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY alembic.ini ./
+
+# Install Python dependencies
+RUN pip install --upgrade pip && \
+    pip install -e .[dev]
 COPY .env.example ./.env
 
 # Create necessary directories
@@ -47,16 +48,16 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["python", "-m", "uvicorn", "ats_backend.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["python", "-m", "uvicorn", "ats_backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 
 # Worker Stage
 FROM base as worker
 
-CMD ["python", "-m", "celery", "worker", "-A", "ats_backend.workers.celery_app", "--loglevel=info", "--concurrency=4", "--queues=resume_processing,email_processing"]
+CMD ["python", "-m", "celery", "-A", "ats_backend.workers.celery_app", "worker", "--loglevel=info", "--concurrency=4", "--queues=resume_processing,email_processing"]
 
 # Flower Stage (for monitoring)
 FROM base as flower
 
 EXPOSE 5555
 
-CMD ["python", "-m", "celery", "flower", "-A", "ats_backend.workers.celery_app", "--port=5555"]
+CMD ["python", "-m", "celery", "-A", "ats_backend.workers.celery_app", "flower", "--port=5555"]
