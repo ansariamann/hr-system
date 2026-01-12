@@ -1,19 +1,31 @@
 import { List, useTable, DateField, TagField, ShowButton } from "@refinedev/antd";
-import { Table, Space } from "antd";
-import { ApplicationStatus } from "../../../shared/types/enums";
-// import { Candidate } from "../../../shared/types/models";
+import { Table, Space, Avatar, Typography } from "antd";
+
+const { Text } = Typography;
+import { ApplicationStatus } from "../../../../shared/types/enums";
+import type { Candidate } from "../../../../shared/types/models";
 
 export const CandidateList = () => {
-    const { tableProps } = useTable({
+    const { tableProps } = useTable<Candidate>({
         syncWithLocation: true,
     });
 
     return (
         <List>
             <Table {...tableProps} rowKey="id">
-                <Table.Column dataIndex="id" title="ID" />
-                <Table.Column dataIndex="name" title="Name" />
-                <Table.Column dataIndex="email" title="Email" />
+                <Table.Column
+                    title="Candidate"
+                    dataIndex="name"
+                    render={(_, record: Candidate) => (
+                        <Space>
+                            <Avatar>{record.name?.charAt(0).toUpperCase()}</Avatar>
+                            <Space direction="vertical" size={0}>
+                                <Text strong>{record.name}</Text>
+                                <Text type="secondary" style={{ fontSize: 12 }}>{record.email}</Text>
+                            </Space>
+                        </Space>
+                    )}
+                />
                 <Table.Column
                     dataIndex="status"
                     title="Status"
@@ -28,7 +40,7 @@ export const CandidateList = () => {
                 <Table.Column
                     dataIndex="created_at"
                     title="Applied At"
-                    render={(value) => <DateField value={value} />}
+                    render={(value) => <DateField value={value} format="MMM DD, YYYY" />}
                 />
                 <Table.Column
                     title="Actions"

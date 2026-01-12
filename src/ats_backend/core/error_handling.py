@@ -608,22 +608,39 @@ def with_error_handling(
     component: str = None
 ):
     """Decorator for automatic error handling."""
+    import inspect
+
     def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        def wrapper(*args, **kwargs):
-            context = ErrorContext(
-                operation=func.__name__,
-                component=component or func.__module__
-            )
-            
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                error_handler = ErrorHandler()
-                ats_error = error_handler.handle_error(e, context)
-                raise ats_error
-        
-        return wrapper
+        if inspect.iscoroutinefunction(func):
+            @functools.wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                context = ErrorContext(
+                    operation=func.__name__,
+                    component=component or func.__module__
+                )
+                
+                try:
+                    return await func(*args, **kwargs)
+                except Exception as e:
+                    error_handler = ErrorHandler()
+                    ats_error = error_handler.handle_error(e, context)
+                    raise ats_error
+            return async_wrapper
+        else:
+            @functools.wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                context = ErrorContext(
+                    operation=func.__name__,
+                    component=component or func.__module__
+                )
+                
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    error_handler = ErrorHandler()
+                    ats_error = error_handler.handle_error(e, context)
+                    raise ats_error
+            return sync_wrapper
     return decorator
 
 

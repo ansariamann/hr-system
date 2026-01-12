@@ -1,0 +1,9 @@
+﻿[1m[31mERROR[39m[22m in [1m./src/apps/hr/HrApp.tsx[39m[22m [1m[32m4:1-40[39m[22m
+  [31m├ù[0m No parser registered for 'css'
+[0m
+
+[1m[31mERROR[39m[22m in [1m./src/main.tsx[39m[22m [1m[32m5:1-21[39m[22m
+  [31m├ù[0m No parser registered for 'css'
+[0m
+
+Rspack compiled with [1m[31m2 errors[39m[22m in 3.05 s

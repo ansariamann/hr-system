@@ -27,11 +27,11 @@ export const useLiveUpdates = () => {
                 if (data.event === "candidate_update" || data.event === "application_update") {
                     invalidate({
                         resource: "candidates",
-                        invalidates: ["list", "one"],
+                        invalidates: ["list", "detail"],
                     });
                     invalidate({
                         resource: "applications",
-                        invalidates: ["list", "one"],
+                        invalidates: ["list", "detail"],
                     });
                 }
             } catch (err) {

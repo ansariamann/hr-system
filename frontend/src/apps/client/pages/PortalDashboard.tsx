@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { Card, CardContent } from "../../../shared/components/ui/Card";
 import { ApplicationStatus } from "../../../shared/types/enums";
 import { cn } from "../../../shared/utils/cn";
+import { apiClient } from "../../../shared/api/client";
+import { Loader2, RefreshCw, LogOut } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 // Strict FSM: Only allowed columns for Client
 const ALLOWED_COLUMNS = [
@@ -12,17 +15,71 @@ const ALLOWED_COLUMNS = [
     { id: ApplicationStatus.HIRED, title: "Joined" },
 ];
 
-// Mock Data
-const initialApplications = [
-    { id: "app-1", candidateName: "Jane Doe", status: ApplicationStatus.TECHNICAL_REVIEW, role: "Senior Engineer" },
-    { id: "app-2", candidateName: "John Smith", status: ApplicationStatus.INTERVIEW_SCHEDULED, role: "Product Owner" },
-];
-
 export default function PortalDashboard() {
-    const [applications, setApplications] = useState(initialApplications);
+    const navigate = useNavigate();
+    const [applications, setApplications] = useState<any[]>([]);
+    const [clientInfo, setClientInfo] = useState<any>(null);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [error, setError] = useState("");
+
+    const fetchClientInfo = async () => {
+        try {
+            const { data } = await apiClient.get("/auth/client");
+            setClientInfo(data);
+        } catch (err) {
+            console.error("Failed to fetch client info", err);
+            // If auth fails, redirect to login
+            navigate("/portal/auth");
+        }
+    };
+
+    const fetchApplications = async (isRefresh = false) => {
+        try {
+            if (isRefresh) setRefreshing(true);
+            else setLoading(true);
+
+            const { data } = await apiClient.get("/applications");
+            // Check if data is array or paginated
+            const apps = Array.isArray(data) ? data : (data.items || []);
+            setApplications(apps);
+            setError("");
+        } catch (err) {
+            console.error("Failed to fetch applications", err);
+            setError("Failed to load applications. Please try refreshing.");
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchClientInfo();
+        fetchApplications();
+
+        // Auto-refresh every 30 seconds
+        const interval = setInterval(() => {
+            fetchApplications(true);
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, []);
+
+    const handleLogout = () => {
+        localStorage.removeItem("client_magic_token");
+        navigate("/portal/auth");
+    };
+
+    const updateApplicationStatus = async (id: string, status: string) => {
+        try {
+            await apiClient.patch(`/applications/${id}`, { status });
+        } catch (err) {
+            console.error("Failed to update status", err);
+            // Revert changes if needed or show toast
+        }
+    };
 
     const onDragEnd = (result: DropResult) => {
-        // Client-side visual update only - Backend would validate FSM
         const { source, destination } = result;
 
         if (!destination) return;
@@ -34,20 +91,42 @@ export default function PortalDashboard() {
             return;
         }
 
-        // Check if transition is valid (Mock FSM)
-        // E.g., Review -> Interview is OK. Review -> Hired is NOT.
-        // Ideally this logic comes from backend permissions.
+        const newStatus = destination.droppableId as ApplicationStatus;
+        const appId = result.draggableId;
 
-        // Update state
-        const newApps = [...applications];
-        const movedApp = newApps.find(app => app.id === result.draggableId);
-        if (movedApp) {
-            movedApp.status = destination.droppableId as ApplicationStatus;
-            setApplications(newApps);
-        }
+        // Optimistic Update
+        const newApps = applications.map(app =>
+            app.id === appId ? { ...app, status: newStatus } : app
+        );
+        setApplications(newApps);
+
+        // API Call
+        updateApplicationStatus(appId, newStatus);
     };
 
     const getAppsByStatus = (status: string) => applications.filter(app => app.status === status);
+
+    if (loading && !clientInfo) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-gray-50">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+            </div>
+        );
+    }
+
+    if (error && !applications.length) {
+        return (
+            <div className="flex min-h-screen items-center justify-center bg-gray-50">
+                <div className="text-center">
+                    <p className="text-red-600 mb-2">{error}</p>
+                    <button onClick={() => fetchApplications()} className="text-blue-600 underline">Try Again</button>
+                    <div className="mt-4">
+                        <button onClick={handleLogout} className="text-sm text-gray-500 hover:text-gray-700">Logout</button>
+                    </div>
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="min-h-screen bg-gray-50 p-6">
@@ -57,7 +136,25 @@ export default function PortalDashboard() {
                     <p className="text-gray-500">Manage your assigned candidates</p>
                 </div>
                 <div className="flex items-center gap-4">
-                    <span className="text-sm text-gray-600">Acme Corp</span>
+                    <div className="text-right hidden sm:block">
+                        <p className="text-sm font-medium text-gray-900">{clientInfo?.name || "Loading..."}</p>
+                        <p className="text-xs text-gray-500">{clientInfo?.email_domain || ""}</p>
+                    </div>
+                    <button
+                        onClick={() => fetchApplications(true)}
+                        className="p-2 text-gray-500 hover:text-blue-600 transition-colors"
+                        title="Refresh Data"
+                        disabled={refreshing}
+                    >
+                        <RefreshCw className={cn("h-5 w-5", refreshing ? "animate-spin" : "")} />
+                    </button>
+                    <button
+                        onClick={handleLogout}
+                        className="p-2 text-gray-500 hover:text-red-600 transition-colors"
+                        title="Logout"
+                    >
+                        <LogOut className="h-5 w-5" />
+                    </button>
                 </div>
             </header>
 
@@ -72,7 +169,7 @@ export default function PortalDashboard() {
                                 </span>
                             </h3>
                             <Droppable droppableId={column.id}>
-                                {(provided, snapshot) => (
+                                {(provided: any, snapshot: any) => (
                                     <div
                                         {...provided.droppableProps}
                                         ref={provided.innerRef}
@@ -81,29 +178,39 @@ export default function PortalDashboard() {
                                             snapshot.isDraggingOver ? "bg-gray-100" : ""
                                         )}
                                     >
-                                        {getAppsByStatus(column.id).map((app, index) => (
-                                            <Draggable key={app.id} draggableId={app.id} index={index}>
-                                                {(provided, snapshot) => (
-                                                    <div
-                                                        ref={provided.innerRef}
-                                                        {...provided.draggableProps}
-                                                        {...provided.dragHandleProps}
-                                                        style={{ ...provided.draggableProps.style }}
-                                                    >
-                                                        <Card className={cn(
-                                                            "cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4",
-                                                            snapshot.isDragging ? "shadow-lg scale-105 rotate-1" : "",
-                                                            "border-l-blue-500" // Dynamic color based on status
-                                                        )}>
-                                                            <CardContent className="p-4">
-                                                                <p className="font-semibold text-gray-900">{app.candidateName}</p>
-                                                                <p className="text-xs text-gray-500 mt-1">{app.role}</p>
-                                                            </CardContent>
-                                                        </Card>
-                                                    </div>
-                                                )}
-                                            </Draggable>
-                                        ))}
+                                        {getAppsByStatus(column.id).length === 0 ? (
+                                            <div className="flex flex-col items-center justify-center py-8 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                                                <p className="text-sm">No candidates</p>
+                                            </div>
+                                        ) : (
+                                            getAppsByStatus(column.id).map((app, index) => (
+                                                <Draggable key={app.id} draggableId={app.id} index={index}>
+                                                    {(provided: any, snapshot: any) => (
+                                                        <div
+                                                            ref={provided.innerRef}
+                                                            {...provided.draggableProps}
+                                                            {...provided.dragHandleProps}
+                                                            style={{ ...provided.draggableProps.style }}
+                                                        >
+                                                            <Card className={cn(
+                                                                "cursor-grab active:cursor-grabbing hover:shadow-md transition-all border-l-4",
+                                                                snapshot.isDragging ? "shadow-lg scale-105 rotate-1" : "",
+                                                                "border-l-blue-500" // Dynamic color based on status
+                                                            )}>
+                                                                <CardContent className="p-4">
+                                                                    <p className="font-semibold text-gray-900">
+                                                                        {app.candidate?.name || "Unknown Candidate"}
+                                                                    </p>
+                                                                    <p className="text-xs text-gray-500 mt-1">
+                                                                        {app.job_title || app.candidate?.email || "No Role Specified"}
+                                                                    </p>
+                                                                </CardContent>
+                                                            </Card>
+                                                        </div>
+                                                    )}
+                                                </Draggable>
+                                            ))
+                                        )}
                                         {provided.placeholder}
                                     </div>
                                 )}

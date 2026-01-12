@@ -1,10 +1,10 @@
-import axios, { InternalAxiosRequestConfig, AxiosResponse, AxiosError } from "axios";
+import axios, { type InternalAxiosRequestConfig, type AxiosResponse, type AxiosError } from "axios";
 
 // Environment variables should be defined in .env
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
 // Define strict types for API responses
-interface ApiResponse<T = any> {
+export interface ApiResponse<T = any> {
     data: T;
     message?: string;
     status: "success" | "error";
@@ -47,7 +47,7 @@ apiClient.interceptors.response.use(
         return response;
     },
     async (error: AxiosError) => {
-        const originalRequest = error.config;
+        // const originalRequest = error.config;
 
         // Handle 401 Unauthorized
         if (error.response?.status === 401) {

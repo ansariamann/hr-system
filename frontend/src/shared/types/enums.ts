@@ -33,3 +33,11 @@ export enum UserRole {
     TRAINEE = "trainee",
     CLIENT = "client"
 }
+
+export enum CandidateStatus {
+    ACTIVE = "ACTIVE",
+    INACTIVE = "INACTIVE",
+    LEFT = "LEFT",
+    HIRED = "HIRED",
+    REJECTED = "REJECTED"
+}

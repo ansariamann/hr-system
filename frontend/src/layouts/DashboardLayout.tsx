@@ -1,7 +1,7 @@
 import { Outlet, NavLink } from "react-router-dom";
 import { LayoutDashboard, Users, FileText, Settings, LogOut } from "lucide-react";
-import { cn } from "../utils/cn";
-import { Button } from "../components/ui/Button";
+import { cn } from "../shared/utils/cn";
+import { Button } from "../shared/components/ui/Button";
 
 const navigation = [
     { name: "Dashboard", href: "/", icon: LayoutDashboard },

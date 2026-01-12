@@ -46,6 +46,20 @@ class DataExtractor:
             re.compile(r'^([A-Z][a-z]+ [A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)', re.MULTILINE),
         ]
         
+        # Education patterns
+        self.education_header_pattern = re.compile(
+            r'(?:education|academic|qualifications|scholastic)', 
+            re.IGNORECASE
+        )
+        
+        self.degree_patterns = [
+            re.compile(r'\b(?:B\.?Tech|M\.?Tech|B\.?E|M\.?E|B\.?S|M\.?S|B\.?A|M\.?A|Ph\.?D\.?|Bachelor|Master|Diploma)\b', re.IGNORECASE),
+            re.compile(r'\b(?:HSC|SSC|High School|Secondary School)\b', re.IGNORECASE),
+        ]
+        
+        self.year_pattern = re.compile(r'\b(19|20)\d{2}\b')
+        self.grade_pattern = re.compile(r'\b(?:CGPA|GPA|%|Grade)[\s:-]*([\d.]+%?)', re.IGNORECASE)
+        
         # Common skill categories
         self.skill_categories = {
             'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'php', 'ruby'],
@@ -58,21 +72,24 @@ class DataExtractor:
         """Extract all structured data from resume text."""
         logger.info("Starting data extraction", text_length=len(text))
         
-        # Clean text
+        # Clean text for specific regexes, but keep structural text for section parsing
         cleaned_text = self._clean_text(text)
         
         # Extract components
         contact_info = self._extract_contact_info(cleaned_text)
         skills = self._extract_skills(cleaned_text)
         
+        # Extract education using the original text (preserving newlines)
+        education = self._extract_education(text)
+        
         result = {
             'contact_info': contact_info,
             'experience': [],  # Simplified for now
-            'education': [],   # Simplified for now
+            'education': education,
             'skills': skills,
             'salary_info': None,  # Simplified for now
             'parsing_method': 'text_extraction',
-            'confidence_score': self._calculate_confidence_score(contact_info, [], skills),
+            'confidence_score': self._calculate_confidence_score(contact_info, [], skills, education),
         }
         
         logger.info("Data extraction completed", confidence_score=result['confidence_score'])
@@ -116,6 +133,99 @@ class DataExtractor:
         
         return contact_info
     
+    def _extract_education(self, text: str) -> List[Education]:
+        """Extract education information from text."""
+        education_entries = []
+        
+        # Simple section extraction logic
+        lines = text.split('\n')
+        in_education_section = False
+        current_entry = {}
+        
+        # Common section headers to detect end of education section
+        other_sections = ['experience', 'work', 'skills', 'projects', 'interests', 'certifications', 'achievements', 'languages']
+        
+        for line in lines:
+            line_clean = line.strip()
+            if not line_clean:
+                continue
+            
+            # Check for headers
+            is_header = False
+            # Check if this line is the Education header
+            if self.education_header_pattern.search(line_clean) and len(line_clean.split()) < 5:
+                in_education_section = True
+                continue
+            
+            # Check if we've hit another section
+            for section in other_sections:
+                if section in line_clean.lower() and len(line_clean.split()) < 4:
+                    if in_education_section:
+                        in_education_section = False
+                    is_header = True
+                    break
+            
+            if is_header:
+                continue
+                
+            if in_education_section:
+                # We are in the education section, try to parse lines as entries or parts of entries
+                # This is a very basic parser: assuming each entry might contain a degree, dates, or institution
+                
+                # Check for Degree
+                degree_match = None
+                for pattern in self.degree_patterns:
+                    match = pattern.search(line_clean)
+                    if match:
+                        degree_match = match.group(0)
+                        break
+                
+                # Check for Year
+                year_match = self.year_pattern.search(line_clean)
+                
+                # Check for Grade
+                grade_match = self.grade_pattern.search(line_clean)
+                
+                # Identify if this line looks like a new entry (simplistic heuristic: has degree or year)
+                if degree_match or year_match:
+                    # Save previous entry if it exists and has at least some data
+                    if current_entry and (current_entry.get('degree') or current_entry.get('institution')):
+                        education_entries.append(Education(**current_entry))
+                        current_entry = {}
+                    
+                    if degree_match:
+                        current_entry['degree'] = degree_match
+                    
+                    if year_match:
+                        current_entry['year'] = year_match.group(0)
+                        
+                    if grade_match:
+                        current_entry['grade'] = grade_match.group(1)
+                    
+                    # Assume the rest of the line or adjacent text might be institution
+                    # If line has degree, maybe other parts are institution?
+                    # For now, simplistic approach: if line is not just the degree/date, keep it as text
+                    # A better way might be to look for "University" or "College" in this line
+                    if "university" in line_clean.lower() or "college" in line_clean.lower() or "institute" in line_clean.lower() or "school" in line_clean.lower():
+                        current_entry['institution'] = line_clean
+                    elif not current_entry.get('institution') and not degree_match and not year_match:
+                         # Any other line in education section could be institution?
+                         # This is risky. Let's only capture if it has keywords for now.
+                         pass
+
+                elif current_entry:
+                     # Continuation of previous entry?
+                     if "university" in line_clean.lower() or "college" in line_clean.lower() or "institute" in line_clean.lower() or "school" in line_clean.lower():
+                        current_entry['institution'] = line_clean
+                     elif grade_match:
+                        current_entry['grade'] = grade_match.group(1)
+        
+        # Append the last entry
+        if current_entry and (current_entry.get('degree') or current_entry.get('institution')):
+            education_entries.append(Education(**current_entry))
+            
+        return education_entries
+
     def _extract_skills(self, text: str) -> List[Skill]:
         """Extract skills from text."""
         skills = []
@@ -138,7 +248,7 @@ class DataExtractor:
         
         return unique_skills
     
-    def _calculate_confidence_score(self, contact_info: ContactInfo, experience: List[Experience], skills: List[Skill]) -> float:
+    def _calculate_confidence_score(self, contact_info: ContactInfo, experience: List[Experience], skills: List[Skill], education: List[Education]) -> float:
         """Calculate confidence score based on extracted data quality."""
         score = 0.0
         
@@ -151,6 +261,8 @@ class DataExtractor:
         if skills:
             score += 0.2
             if len(skills) >= 3:
-                score += 0.2
+                score += 0.1
+        if education:
+            score += 0.1
         
         return min(score, 1.0)

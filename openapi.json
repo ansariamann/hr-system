@@ -1,0 +1,4313 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "ATS Backend API",
+    "description": "Multi-tenant Applicant Tracking System with comprehensive error handling and monitoring",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/email/ingest": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Ingest Email",
+        "description": "Ingest email with resume attachments for processing.\n\nThis endpoint receives emails with resume attachments and creates\nbackground jobs for processing. Supports deduplication and multiple\nfile formats (PDF, PNG, JPG, TIFF).",
+        "operationId": "ingest_email_email_ingest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailIngestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailIngestionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/email/ingest/async": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Ingest Email Async",
+        "description": "Ingest email asynchronously using Celery task queue.\n\nThis endpoint queues email processing as a background task and\nreturns immediately with a task ID for status tracking.",
+        "operationId": "ingest_email_async_email_ingest_async_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailIngestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Ingest Email Async Email Ingest Async Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/email/task/{task_id}/status": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Get Task Status",
+        "description": "Get status of an email processing task.",
+        "operationId": "get_task_status_email_task__task_id__status_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/jobs": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Get Resume Jobs",
+        "description": "Get resume jobs for the current client.",
+        "operationId": "get_resume_jobs_email_jobs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ResumeJobResponse"
+                  },
+                  "title": "Response Get Resume Jobs Email Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Get Resume Job",
+        "description": "Get a specific resume job by ID.",
+        "operationId": "get_resume_job_email_jobs__job_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResumeJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/jobs/{job_id}/retry": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Retry Failed Job",
+        "description": "Retry a failed resume job.",
+        "operationId": "retry_failed_job_email_jobs__job_id__retry_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/stats": {
+      "get": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Get Processing Statistics",
+        "description": "Get email processing statistics for the current client.",
+        "operationId": "get_processing_statistics_email_stats_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "title": "Days Back"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/cleanup/failed-jobs": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Cleanup Failed Jobs Endpoint",
+        "description": "Clean up old failed jobs for the current client.",
+        "operationId": "cleanup_failed_jobs_endpoint_email_cleanup_failed_jobs_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "max_age_hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "title": "Max Age Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/webhook/raw": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Email Webhook Raw",
+        "description": "Webhook endpoint for receiving raw email data.\n\nThis endpoint can be used by email services to send raw email data\ndirectly to the ATS system for processing. Authentication is handled\nvia API key or other webhook-specific authentication.",
+        "operationId": "email_webhook_raw_email_webhook_raw_post",
+        "parameters": [
+          {
+            "name": "raw_email",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Raw Email"
+            }
+          },
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/email/validate": {
+      "post": {
+        "tags": [
+          "email"
+        ],
+        "summary": "Validate Email Message",
+        "description": "Validate email message format without processing.",
+        "operationId": "validate_email_message_email_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/monitoring/health": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Comprehensive health check",
+        "description": "Comprehensive health check for all critical services.\n\nReturns detailed health status for:\n- Database connectivity and performance\n- Redis connectivity and performance  \n- Celery worker availability and queue status\n- System resources (CPU, memory, disk)\n- File storage accessibility",
+        "operationId": "health_check_monitoring_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Check Monitoring Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/health/simple": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Simple health check",
+        "description": "Simple health check that returns basic status.\nUsed by load balancers and monitoring systems.",
+        "operationId": "simple_health_check_monitoring_health_simple_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Simple Health Check Monitoring Health Simple Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/readiness": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Readiness probe",
+        "description": "Kubernetes-style readiness probe.\nReturns 200 if service is ready to accept traffic.",
+        "operationId": "readiness_probe_monitoring_readiness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Readiness Probe Monitoring Readiness Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/liveness": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Liveness probe",
+        "description": "Kubernetes-style liveness probe.\nReturns 200 if service is alive and should not be restarted.",
+        "operationId": "liveness_probe_monitoring_liveness_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Liveness Probe Monitoring Liveness Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/metrics": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Prometheus metrics",
+        "description": "Prometheus-compatible metrics endpoint.\nReturns metrics in Prometheus text format.",
+        "operationId": "prometheus_metrics_monitoring_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/diagnostic": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "60-second diagnostic",
+        "description": "Comprehensive diagnostic information within 60 seconds.\n\nProvides detailed system status, performance metrics, queue status,\nworker health, recent errors, cost analysis, and trend information.",
+        "operationId": "diagnostic_endpoint_monitoring_diagnostic_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Diagnostic Endpoint Monitoring Diagnostic Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/alerts": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Active alerts",
+        "description": "Get all currently active alerts.",
+        "operationId": "get_active_alerts_monitoring_alerts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Active Alerts Monitoring Alerts Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/alerts/{alert_name}/clear": {
+      "post": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Clear alert",
+        "description": "Clear a specific active alert.",
+        "operationId": "clear_alert_monitoring_alerts__alert_name__clear_post",
+        "parameters": [
+          {
+            "name": "alert_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Alert Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Alert Monitoring Alerts  Alert Name  Clear Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/trends": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Historical trends",
+        "description": "Get historical trend analysis.\n\nArgs:\n    hours: Number of hours to look back (default: 24)",
+        "operationId": "get_trends_monitoring_trends_get",
+        "parameters": [
+          {
+            "name": "hours",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 24,
+              "title": "Hours"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Trends Monitoring Trends Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/alert-rules": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Get alert rules",
+        "description": "Get all configured alert rules.",
+        "operationId": "get_alert_rules_monitoring_alert_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Alert Rules Monitoring Alert Rules Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/monitoring/notification-configs": {
+      "get": {
+        "tags": [
+          "monitoring"
+        ],
+        "summary": "Get notification configurations",
+        "description": "Get all notification channel configurations.",
+        "operationId": "get_notification_configs_monitoring_notification_configs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Notification Configs Monitoring Notification Configs Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/candidates/": {
+      "post": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Create Candidate",
+        "description": "Create a new candidate.\n\nCreates a new candidate record with audit logging and automatic\nclient association based on the authenticated user's client.",
+        "operationId": "create_candidate_candidates__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "List Candidates",
+        "description": "List candidates with optional filtering.\n\nSupports filtering by name pattern, skills, and status.\nResults are automatically filtered to the current client.",
+        "operationId": "list_candidates_candidates__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name_pattern",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search by name pattern",
+              "title": "Name Pattern"
+            },
+            "description": "Search by name pattern"
+          },
+          {
+            "name": "skills",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search by skills (comma-separated)",
+              "title": "Skills"
+            },
+            "description": "Search by skills (comma-separated)"
+          },
+          {
+            "name": "candidate_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by candidate status",
+              "title": "Candidate Status"
+            },
+            "description": "Filter by candidate status"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "Maximum number of records",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CandidateResponse"
+                  },
+                  "title": "Response List Candidates Candidates  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/candidates/{candidate_id}": {
+      "get": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Get Candidate",
+        "description": "Get a specific candidate by ID.\n\nReturns candidate details if the candidate belongs to the\ncurrent client, otherwise returns 404.",
+        "operationId": "get_candidate_candidates__candidate_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Update Candidate",
+        "description": "Update a candidate's information.\n\nUpdates candidate data with audit logging. Only provided fields\nare updated, others remain unchanged.",
+        "operationId": "update_candidate_candidates__candidate_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CandidateUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Delete Candidate",
+        "description": "Delete a candidate.\n\nPermanently deletes a candidate record with audit logging.\nThis is a hard delete operation.",
+        "operationId": "delete_candidate_candidates__candidate_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/candidates/{candidate_id}/duplicates": {
+      "get": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Find Candidate Duplicates",
+        "description": "Find potential duplicate candidates.\n\nReturns a list of candidates that might be duplicates of the\nspecified candidate based on name, email, and phone matching.",
+        "operationId": "find_candidate_duplicates_candidates__candidate_id__duplicates_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CandidateResponse"
+                  },
+                  "title": "Response Find Candidate Duplicates Candidates  Candidate Id  Duplicates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/candidates/email/{email}": {
+      "get": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Get Candidate By Email",
+        "description": "Get candidate by email address.\n\nReturns candidate with the specified email address within\nthe current client's context.",
+        "operationId": "get_candidate_by_email_candidates_email__email__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Email"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CandidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/candidates/stats/summary": {
+      "get": {
+        "tags": [
+          "candidates"
+        ],
+        "summary": "Get Candidate Statistics",
+        "description": "Get candidate statistics for the current client.\n\nReturns summary statistics including total candidates,\nstatus breakdown, and other metrics.",
+        "operationId": "get_candidate_statistics_candidates_stats_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/applications/": {
+      "post": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Create Application",
+        "description": "Create a new application.\n\nCreates a new application record with audit logging and automatic\nclient association based on the authenticated user's client.",
+        "operationId": "create_application_applications__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "List Applications",
+        "description": "List applications with optional filtering.\n\nSupports filtering by status, flagged status, and soft-deleted status.\nResults are automatically filtered to the current client.",
+        "operationId": "list_applications_applications__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by application status",
+              "title": "Application Status"
+            },
+            "description": "Filter by application status"
+          },
+          {
+            "name": "flagged_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Show only flagged applications",
+              "default": false,
+              "title": "Flagged Only"
+            },
+            "description": "Show only flagged applications"
+          },
+          {
+            "name": "include_deleted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include soft-deleted applications",
+              "default": false,
+              "title": "Include Deleted"
+            },
+            "description": "Include soft-deleted applications"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Number of records to skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Number of records to skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "description": "Maximum number of records",
+              "default": 100,
+              "title": "Limit"
+            },
+            "description": "Maximum number of records"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApplicationResponse"
+                  },
+                  "title": "Response List Applications Applications  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}": {
+      "get": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Get Application",
+        "description": "Get a specific application by ID.\n\nReturns application details if the application belongs to the\ncurrent client, otherwise returns 404.",
+        "operationId": "get_application_applications__application_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Update Application",
+        "description": "Update an application's information.\n\nUpdates application data with audit logging. Only provided fields\nare updated, others remain unchanged.",
+        "operationId": "update_application_applications__application_id__put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplicationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Soft Delete Application",
+        "description": "Soft delete an application.\n\nMarks an application as deleted while preserving historical data.\nThis implements the soft delete requirement from the specifications.",
+        "operationId": "soft_delete_application_applications__application_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/restore": {
+      "post": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Restore Application",
+        "description": "Restore a soft-deleted application.\n\nRestores a previously soft-deleted application back to active status.",
+        "operationId": "restore_application_applications__application_id__restore_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/flag": {
+      "post": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Flag Application",
+        "description": "Flag an application for manual review.\n\nFlags an application for manual review with a specified reason.\nThis is used by the duplicate detection system and manual processes.",
+        "operationId": "flag_application_applications__application_id__flag_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "flag_reason",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Reason for flagging the application",
+              "title": "Flag Reason"
+            },
+            "description": "Reason for flagging the application"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/unflag": {
+      "post": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Unflag Application",
+        "description": "Remove flag from an application.\n\nRemoves the flag from an application, allowing normal workflow progression.",
+        "operationId": "unflag_application_applications__application_id__unflag_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/{application_id}/status": {
+      "put": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Update Application Status",
+        "description": "Update application status with workflow progression controls.\n\nUpdates application status while checking workflow progression rules.\nFlagged applications may be blocked from certain status changes unless forced.",
+        "operationId": "update_application_status_applications__application_id__status_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "application_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Application Id"
+            }
+          },
+          {
+            "name": "new_status",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "New status for the application",
+              "title": "New Status"
+            },
+            "description": "New status for the application"
+          },
+          {
+            "name": "force_update",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Force update even if workflow progression is blocked",
+              "default": false,
+              "title": "Force Update"
+            },
+            "description": "Force update even if workflow progression is blocked"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/candidate/{candidate_id}": {
+      "get": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Get Applications By Candidate",
+        "description": "Get all applications for a specific candidate.\n\nReturns all applications associated with the specified candidate\nwithin the current client's context.",
+        "operationId": "get_applications_by_candidate_applications_candidate__candidate_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "candidate_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Candidate Id"
+            }
+          },
+          {
+            "name": "include_deleted",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Include soft-deleted applications",
+              "default": false,
+              "title": "Include Deleted"
+            },
+            "description": "Include soft-deleted applications"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApplicationResponse"
+                  },
+                  "title": "Response Get Applications By Candidate Applications Candidate  Candidate Id  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/applications/stats/summary": {
+      "get": {
+        "tags": [
+          "applications"
+        ],
+        "summary": "Get Application Statistics",
+        "description": "Get application statistics for the current client.\n\nReturns summary statistics including total applications,\nstatus breakdown, and other metrics.",
+        "operationId": "get_application_statistics_applications_stats_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/security/scan/comprehensive": {
+      "post": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Run Comprehensive Security Scan",
+        "description": "Run comprehensive security scan including all RLS tests.\n\nArgs:\n    scan_id: Optional scan identifier\n    current_user: Current authenticated user\n    db: Database session\n    \nReturns:\n    Security scan results",
+        "operationId": "run_comprehensive_security_scan_security_scan_comprehensive_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "scan_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Run Comprehensive Security Scan Security Scan Comprehensive Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/scan/targeted/{test_type}": {
+      "post": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Run Targeted Security Test",
+        "description": "Run specific security test.\n\nArgs:\n    test_type: Type of test to run (cross_client_access, unauthenticated_access, policy_integrity)\n    current_user: Current authenticated user\n    db: Database session\n    \nReturns:\n    Test results",
+        "operationId": "run_targeted_security_test_security_scan_targeted__test_type__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "test_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Test Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Run Targeted Security Test Security Scan Targeted  Test Type  Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/validate/query": {
+      "post": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Validate Query Security",
+        "description": "Validate query for SQL injection and RLS bypass attempts.\n\nArgs:\n    query: SQL query to validate\n    current_user: Current authenticated user\n    db: Database session\n    \nReturns:\n    Validation results",
+        "operationId": "validate_query_security_security_validate_query_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Query"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Validate Query Security Security Validate Query Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/test/cross-client-access": {
+      "post": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Test Cross Client Token Access",
+        "description": "Test cross-client token access prevention.\n\nArgs:\n    target_client_id: Client ID to attempt access to\n    current_user: Current authenticated user\n    db: Database session\n    \nReturns:\n    Cross-client access test results",
+        "operationId": "test_cross_client_token_access_security_test_cross_client_access_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "target_client_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Target Client Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Test Cross Client Token Access Security Test Cross Client Access Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/test/sql-injection": {
+      "post": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Test Sql Injection Protection",
+        "description": "Test SQL injection protection mechanisms.\n\nArgs:\n    malicious_inputs: List of malicious SQL inputs to test\n    current_user: Current authenticated user\n    db: Database session\n    \nReturns:\n    SQL injection protection test results",
+        "operationId": "test_sql_injection_protection_security_test_sql_injection_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "title": "Malicious Inputs"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Test Sql Injection Protection Security Test Sql Injection Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/security/scan/history": {
+      "get": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Get Security Scan History",
+        "description": "Get security scan history.\n\nArgs:\n    limit: Maximum number of scans to return\n    current_user: Current authenticated user\n    \nReturns:\n    Security scan history",
+        "operationId": "get_security_scan_history_security_scan_history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Security Scan History Security Scan History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/security/metrics": {
+      "get": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Get Security Metrics",
+        "description": "Get security metrics from scan history.\n\nArgs:\n    current_user: Current authenticated user\n    \nReturns:\n    Security metrics",
+        "operationId": "get_security_metrics_security_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Security Metrics Security Metrics Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/security/status": {
+      "get": {
+        "tags": [
+          "security"
+        ],
+        "summary": "Get Security Status",
+        "description": "Get overall security status.\n\nArgs:\n    current_user: Current authenticated user\n    \nReturns:\n    Security status summary",
+        "operationId": "get_security_status_security_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Security Status Security Status Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sse/events": {
+      "get": {
+        "tags": [
+          "sse"
+        ],
+        "summary": "Stream Events",
+        "description": "Stream real-time events via Server-Sent Events.\n\nProvides a persistent connection for real-time updates about applications,\ncandidates, and other system events. Supports automatic reconnection\nwith missed event replay.\n\nArgs:\n    request: FastAPI request object\n    last_event_id: Last event ID received (for reconnection handling)\n    current_user: Authenticated user\n    current_client: User's client (tenant)\n    \nReturns:\n    StreamingResponse with SSE events",
+        "operationId": "stream_events_sse_events_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "last_event_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Last event ID for reconnection",
+              "title": "Last Event Id"
+            },
+            "description": "Last event ID for reconnection"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sse/test-event": {
+      "post": {
+        "tags": [
+          "sse"
+        ],
+        "summary": "Send Test Event",
+        "description": "Send a test event for SSE functionality testing.\n\nThis endpoint is useful for testing SSE connectivity and event delivery.\nIn production, events would be triggered by actual system changes.\n\nArgs:\n    event_type: Type of test event\n    message: Test message content\n    application_id: Optional application ID for testing per-application ordering\n    current_user: Authenticated user\n    current_client: User's client (tenant)\n    db: Database session\n    \nReturns:\n    Success confirmation",
+        "operationId": "send_test_event_sse_test_event_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "event_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Type of test event",
+              "default": "test",
+              "title": "Event Type"
+            },
+            "description": "Type of test event"
+          },
+          {
+            "name": "message",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Test message content",
+              "default": "Test message",
+              "title": "Message"
+            },
+            "description": "Test message content"
+          },
+          {
+            "name": "application_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional application ID",
+              "title": "Application Id"
+            },
+            "description": "Optional application ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sse/metrics": {
+      "get": {
+        "tags": [
+          "sse"
+        ],
+        "summary": "Get Sse Metrics",
+        "description": "Get SSE system metrics and performance data.\n\nReturns metrics about SSE performance, connection counts, latency,\nand other operational data for monitoring and alerting.\n\nArgs:\n    current_user: Authenticated user\n    current_client: User's client (tenant)\n    \nReturns:\n    SSE metrics dictionary",
+        "operationId": "get_sse_metrics_sse_metrics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/sse/health": {
+      "get": {
+        "tags": [
+          "sse"
+        ],
+        "summary": "Sse Health Check",
+        "description": "Check SSE system health and connectivity.\n\nVerifies that the SSE system is operational, Redis is connected,\nand the system can handle new connections.\n\nArgs:\n    current_user: Authenticated user\n    current_client: User's client (tenant)\n    \nReturns:\n    Health status information",
+        "operationId": "sse_health_check_sse_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/diagnostic": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get 60 Second Diagnostic",
+        "description": "Get comprehensive diagnostic information within 60 seconds.",
+        "operationId": "get_60_second_diagnostic_observability_diagnostic_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get 60 Second Diagnostic Observability Diagnostic Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/performance": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Performance Metrics",
+        "description": "Get comprehensive performance metrics.",
+        "operationId": "get_performance_metrics_observability_performance_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by operation name",
+              "title": "Operation"
+            },
+            "description": "Filter by operation name"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Performance Metrics Observability Performance Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/cost": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Cost Metrics",
+        "description": "Get cost and resource consumption metrics.",
+        "operationId": "get_cost_metrics_observability_cost_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Cost Metrics Observability Cost Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/alerts": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Active Alerts",
+        "description": "Get active alerts.",
+        "operationId": "get_active_alerts_observability_alerts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Active Alerts Observability Alerts Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/alerts/check": {
+      "post": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Trigger Alert Check",
+        "description": "Trigger manual alert check.",
+        "operationId": "trigger_alert_check_observability_alerts_check_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Trigger Alert Check Observability Alerts Check Post"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/alerts/{alert_name}": {
+      "delete": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Clear Alert",
+        "description": "Clear an active alert.",
+        "operationId": "clear_alert_observability_alerts__alert_name__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "alert_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Alert Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Alert Observability Alerts  Alert Name  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/trends": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Historical Trends",
+        "description": "Get historical trend analysis.",
+        "operationId": "get_historical_trends_observability_trends_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "hours_back",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "Hours to look back",
+              "default": 24,
+              "title": "Hours Back"
+            },
+            "description": "Hours to look back"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Historical Trends Observability Trends Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/alert-rules": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Alert Rules",
+        "description": "Get all alert rules.",
+        "operationId": "get_alert_rules_observability_alert_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Alert Rules Observability Alert Rules Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Create Alert Rule",
+        "description": "Create or update an alert rule.",
+        "operationId": "create_alert_rule_observability_alert_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "type": "object",
+                "title": "Rule Data"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Create Alert Rule Observability Alert Rules Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/alert-rules/{rule_name}": {
+      "delete": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Delete Alert Rule",
+        "description": "Delete an alert rule.",
+        "operationId": "delete_alert_rule_observability_alert_rules__rule_name__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Alert Rule Observability Alert Rules  Rule Name  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/alert-rules/{rule_name}/enable": {
+      "put": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Enable Alert Rule",
+        "description": "Enable an alert rule.",
+        "operationId": "enable_alert_rule_observability_alert_rules__rule_name__enable_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Enable Alert Rule Observability Alert Rules  Rule Name  Enable Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/alert-rules/{rule_name}/disable": {
+      "put": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Disable Alert Rule",
+        "description": "Disable an alert rule.",
+        "operationId": "disable_alert_rule_observability_alert_rules__rule_name__disable_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "rule_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Rule Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Disable Alert Rule Observability Alert Rules  Rule Name  Disable Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/notification-configs": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Notification Configs",
+        "description": "Get notification configurations.",
+        "operationId": "get_notification_configs_observability_notification_configs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Notification Configs Observability Notification Configs Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/notification-configs/{channel}/test": {
+      "post": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Test Notification Channel",
+        "description": "Test a notification channel.",
+        "operationId": "test_notification_channel_observability_notification_configs__channel__test_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Channel"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Test Notification Channel Observability Notification Configs  Channel  Test Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/thresholds": {
+      "put": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Update Alert Thresholds",
+        "description": "Update alert thresholds.",
+        "operationId": "update_alert_thresholds_observability_thresholds_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object",
+                "title": "Thresholds"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Update Alert Thresholds Observability Thresholds Put"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/observability/dashboard": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "summary": "Get Observability Dashboard",
+        "description": "Get comprehensive observability dashboard data.",
+        "operationId": "get_observability_dashboard_observability_dashboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Observability Dashboard Observability Dashboard Get"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Comprehensive health check endpoint.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "summary": "Login",
+        "description": "Authenticate user and return access token with comprehensive error handling and security features.",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_auth_login_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Token"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "summary": "Get Current User Info",
+        "description": "Get current user information with error handling.",
+        "operationId": "get_current_user_info_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/auth/client": {
+      "get": {
+        "summary": "Get Current Client Info",
+        "description": "Get current client information with error handling.",
+        "operationId": "get_current_client_info_auth_client_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/clients/stats": {
+      "get": {
+        "summary": "Get Client Stats",
+        "description": "Get statistics for current client with comprehensive error handling.",
+        "operationId": "get_client_stats_clients_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/protected": {
+      "get": {
+        "summary": "Protected Endpoint",
+        "description": "Example protected endpoint with error handling.",
+        "operationId": "protected_endpoint_protected_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApplicationCreate": {
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Candidate Id",
+            "description": "Candidate UUID"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title",
+            "description": "Job title for the application"
+          },
+          "application_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Date",
+            "description": "Application date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Application status",
+            "default": "RECEIVED"
+          },
+          "flagged_for_review": {
+            "type": "boolean",
+            "title": "Flagged For Review",
+            "description": "Whether application is flagged for review",
+            "default": false
+          },
+          "flag_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag Reason",
+            "description": "Reason for flagging"
+          }
+        },
+        "type": "object",
+        "required": [
+          "candidate_id"
+        ],
+        "title": "ApplicationCreate",
+        "description": "Schema for creating a new application."
+      },
+      "ApplicationResponse": {
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Candidate Id",
+            "description": "Candidate UUID"
+          },
+          "job_title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title",
+            "description": "Job title for the application"
+          },
+          "application_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Application Date",
+            "description": "Application date"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Application status",
+            "default": "RECEIVED"
+          },
+          "flagged_for_review": {
+            "type": "boolean",
+            "title": "Flagged For Review",
+            "description": "Whether application is flagged for review",
+            "default": false
+          },
+          "flag_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag Reason",
+            "description": "Reason for flagging"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Id"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "title": "Is Deleted",
+            "description": "Whether application is soft deleted"
+          },
+          "candidate": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CandidateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "id",
+          "client_id",
+          "deleted_at",
+          "created_at",
+          "updated_at",
+          "is_deleted"
+        ],
+        "title": "ApplicationResponse",
+        "description": "Schema for application response."
+      },
+      "ApplicationUpdate": {
+        "properties": {
+          "job_title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "flagged_for_review": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flagged For Review"
+          },
+          "flag_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Flag Reason"
+          }
+        },
+        "type": "object",
+        "title": "ApplicationUpdate",
+        "description": "Schema for updating an application."
+      },
+      "Body_login_auth_login_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^password$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_login_auth_login_post"
+      },
+      "CandidateCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Candidate full name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email",
+            "description": "Candidate email address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Candidate phone number"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills",
+            "description": "Candidate skills in JSONB format"
+          },
+          "experience": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience",
+            "description": "Candidate experience in JSONB format"
+          },
+          "ctc_current": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctc Current",
+            "description": "Current CTC in decimal format"
+          },
+          "ctc_expected": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctc Expected",
+            "description": "Expected CTC in decimal format"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Candidate status",
+            "default": "ACTIVE"
+          },
+          "candidate_hash": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Hash",
+            "description": "Candidate hash for duplicate detection"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CandidateCreate",
+        "description": "Schema for creating a new candidate."
+      },
+      "CandidateResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Candidate full name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email",
+            "description": "Candidate email address"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone",
+            "description": "Candidate phone number"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills",
+            "description": "Candidate skills in JSONB format"
+          },
+          "experience": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience",
+            "description": "Candidate experience in JSONB format"
+          },
+          "ctc_current": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctc Current",
+            "description": "Current CTC in decimal format"
+          },
+          "ctc_expected": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctc Expected",
+            "description": "Expected CTC in decimal format"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Candidate status",
+            "default": "ACTIVE"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Id"
+          },
+          "candidate_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Hash"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "id",
+          "client_id",
+          "candidate_hash",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CandidateResponse",
+        "description": "Schema for candidate response."
+      },
+      "CandidateUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 50
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "skills": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skills"
+          },
+          "experience": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience"
+          },
+          "ctc_current": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctc Current"
+          },
+          "ctc_expected": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ctc Expected"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "CandidateUpdate",
+        "description": "Schema for updating a candidate."
+      },
+      "EmailAttachment": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "Original filename of the attachment"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type",
+            "description": "MIME content type"
+          },
+          "content": {
+            "type": "string",
+            "format": "binary",
+            "title": "Content",
+            "description": "Binary content of the attachment"
+          },
+          "size": {
+            "type": "integer",
+            "title": "Size",
+            "description": "Size of the attachment in bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "content_type",
+          "content",
+          "size"
+        ],
+        "title": "EmailAttachment",
+        "description": "Email attachment model."
+      },
+      "EmailIngestionRequest": {
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Id",
+            "description": "Client UUID for multi-tenant isolation"
+          },
+          "email": {
+            "$ref": "#/components/schemas/EmailMessage",
+            "description": "Email message to process"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_id",
+          "email"
+        ],
+        "title": "EmailIngestionRequest",
+        "description": "Request model for email ingestion API."
+      },
+      "EmailIngestionResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "Whether ingestion was successful"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Status message"
+          },
+          "job_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Job Ids",
+            "description": "Created resume job IDs"
+          },
+          "duplicate_message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duplicate Message Id",
+            "description": "Message ID if duplicate detected"
+          },
+          "processed_attachments": {
+            "type": "integer",
+            "title": "Processed Attachments",
+            "description": "Number of attachments processed",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "EmailIngestionResponse",
+        "description": "Response model for email ingestion API."
+      },
+      "EmailMessage": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id",
+            "description": "Unique email message ID for deduplication"
+          },
+          "sender": {
+            "type": "string",
+            "title": "Sender",
+            "description": "Email sender address"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "description": "Email subject line"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body",
+            "description": "Email body content"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At",
+            "description": "When email was received"
+          },
+          "attachments": {
+            "items": {
+              "$ref": "#/components/schemas/EmailAttachment"
+            },
+            "type": "array",
+            "title": "Attachments",
+            "description": "Email attachments"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Headers",
+            "description": "Email headers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "sender",
+          "subject"
+        ],
+        "title": "EmailMessage",
+        "description": "Email message model for ingestion."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ResumeJobResponse": {
+        "properties": {
+          "email_message_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Message Id",
+            "description": "Email message ID for deduplication"
+          },
+          "file_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Name",
+            "description": "Resume file name"
+          },
+          "file_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Path",
+            "description": "Path to resume file"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Processing status",
+            "default": "PENDING"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message",
+            "description": "Error message if processing failed"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Id"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "client_id",
+          "processed_at",
+          "created_at"
+        ],
+        "title": "ResumeJobResponse",
+        "description": "Schema for resume job response."
+      },
+      "Token": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in"
+        ],
+        "title": "Token",
+        "description": "Token response schema."
+      },
+      "UserResponse": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "client_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Client Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "id",
+          "client_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserResponse",
+        "description": "User response schema."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

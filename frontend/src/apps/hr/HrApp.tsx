@@ -1,12 +1,13 @@
 import { Refine } from "@refinedev/core";
-import { ThemedLayoutV2, ErrorComponent, RefineThemes, useNotificationProvider } from "@refinedev/antd";
+import { ThemedLayoutV2, ErrorComponent, useNotificationProvider } from "@refinedev/antd";
 import "@refinedev/antd/dist/reset.css";
 import { ConfigProvider, App as AntdApp } from "antd";
-import routerBindings, { NavigateToResource, UnsavedChangesNotifier, DocumentTitleHandler } from "@refinedev/react-router-v6";
-import { BrowserRouter, Routes, Route, Outlet } from "react-router-dom";
+import routerBindings, { UnsavedChangesNotifier, DocumentTitleHandler } from "@refinedev/react-router-v6";
+import { Routes, Route, Outlet } from "react-router-dom";
 import simpleRestDataProvider from "@refinedev/simple-rest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/api/client";
+import { apiClient } from "../../shared/api/client";
 
 // Pages
 import { CandidateList } from "./pages/candidates/list";
@@ -14,26 +15,39 @@ import { CandidateShow } from "./pages/candidates/show";
 // import { CandidateEdit } from "./pages/candidates/edit";
 import { ApplicationList } from "./pages/applications/list";
 import { HrCopilot } from "./components/HrCopilot";
+import { DashboardOverview } from "./pages/dashboard/overview";
+import { JobList } from "./pages/jobs/list";
 
 const API_URL = "http://localhost:8000";
 
 import { useLiveUpdates } from "./hooks/useLiveUpdates";
 import { authProvider } from "./authProvider";
-import PortalLogin from "../client/pages/PortalLogin";
 
-export default function HrApp() {
+const queryClient = new QueryClient();
+
+function HrAppContent() {
     useLiveUpdates();
 
     return (
         <ConfigProvider theme={{ token: { colorPrimary: '#1677ff' } }}>
             <AntdApp>
                 <Refine
-                    dataProvider={simpleRestDataProvider(API_URL, apiClient)}
+                    dataProvider={simpleRestDataProvider(API_URL, apiClient as any)}
                     notificationProvider={useNotificationProvider}
                     authProvider={authProvider}
                     routerProvider={routerBindings}
-                    LoginPage={() => <PortalLogin />}
+                    routerProvider={routerBindings}
                     resources={[
+                        {
+                            name: "dashboard",
+                            list: "/admin",
+                            meta: { label: "Dashboard" }
+                        },
+                        {
+                            name: "jobs",
+                            list: "/admin/jobs",
+                            meta: { label: "Jobs" }
+                        },
                         {
                             name: "candidates",
                             list: "/admin/candidates",
@@ -63,7 +77,7 @@ export default function HrApp() {
                                 </ThemedLayoutV2>
                             }
                         >
-                            <Route index element={<NavigateToResource resource="candidates" />} />
+                            <Route index element={<DashboardOverview />} />
 
                             <Route path="candidates">
                                 <Route index element={<CandidateList />} />
@@ -74,6 +88,10 @@ export default function HrApp() {
                                 <Route index element={<ApplicationList />} />
                             </Route>
 
+                            <Route path="jobs">
+                                <Route index element={<JobList />} />
+                            </Route>
+
                             <Route path="*" element={<ErrorComponent />} />
                         </Route>
                     </Routes>
@@ -82,5 +100,13 @@ export default function HrApp() {
                 </Refine>
             </AntdApp>
         </ConfigProvider >
+    );
+}
+
+export default function HrApp() {
+    return (
+        <QueryClientProvider client={queryClient}>
+            <HrAppContent />
+        </QueryClientProvider>
     );
 }

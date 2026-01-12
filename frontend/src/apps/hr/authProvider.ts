@@ -1,13 +1,13 @@
-import { AuthProvider } from "@refinedev/core";
+import type { AuthProvider } from "@refinedev/core";
 import { apiClient } from "../../shared/api/client";
 
 export const authProvider: AuthProvider = {
     login: async ({ email, password }) => {
         try {
-            const { data } = await apiClient.post("/auth/login", {
+            const { data } = await apiClient.post("/auth/login", new URLSearchParams({
                 username: email,
                 password: password,
-            }, {
+            }), {
                 headers: {
                     "Content-Type": "application/x-www-form-urlencoded"
                 }
@@ -28,12 +28,17 @@ export const authProvider: AuthProvider = {
                     message: "Invalid credentials",
                 },
             };
-        } catch (error) {
+        } catch (error: any) {
+            console.error("Login failed:", error);
+            let detail = error.response?.data?.error?.message || error.response?.data?.detail || error.message;
+            if (typeof detail === 'object') {
+                detail = JSON.stringify(detail);
+            }
             return {
                 success: false,
                 error: {
                     name: "LoginError",
-                    message: "Invalid email or password",
+                    message: detail || "Invalid email or password",
                 },
             };
         }
@@ -62,6 +67,14 @@ export const authProvider: AuthProvider = {
     getIdentity: async () => {
         const token = localStorage.getItem("hr_token");
         if (!token) return null;
+
+        if (token === "dev_token") {
+            return {
+                id: 999,
+                name: "Dev User",
+                avatar: "https://i.pravatar.cc/150",
+            };
+        }
 
         try {
             const { data } = await apiClient.get("/auth/me");

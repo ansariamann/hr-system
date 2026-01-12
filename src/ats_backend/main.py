@@ -222,18 +222,26 @@ app = FastAPI(
 )
 
 # Add middleware in correct order (last added = first executed)
-app.add_middleware(ErrorHandlingMiddleware)
+# Inner layers (executed closest to the application)
 app.add_middleware(LoggingMiddleware)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# Security Layer (executed before logging, closest to app in security chain)
 app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(AbuseProtectionMiddleware)
 app.add_middleware(InputSanitizationMiddleware)
+
+# Outer Layers (executed first on request, last on response)
+# Error Handling must wrap everything to catch middleware errors
+app.add_middleware(ErrorHandlingMiddleware)
+
+# CORS must be outermost to ensure headers are added to ALL responses (including errors)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Include API routers
 app.include_router(email_router)
@@ -298,9 +306,20 @@ async def health_check():
         raise error_handler.handle_error(e, context)
 
 
+@app.get("/debug-env")
+def debug_env():
+    import os
+    from ats_backend.core.config import settings
+    return {
+        "TESTING": os.getenv("TESTING"),
+        "DB_URL": settings.database_url,
+        "REDIS_HOST": settings.redis_host,
+        "ENV_FILE": settings.model_dump()
+    }
+
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")
-async def login(
+def login(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -318,12 +337,14 @@ async def login(
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
     
+
+    
     try:
         with performance_logger.log_operation_time(
             "user_login",
             email=form_data.username
         ):
-            user = await authenticate_user(
+            user = authenticate_user(
                 db, 
                 form_data.username, 
                 form_data.password,

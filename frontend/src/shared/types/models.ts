@@ -10,15 +10,14 @@ export interface User {
 
 export interface Candidate {
     id: string;
-    first_name: string;
-    last_name: string;
+    name: string;
     email: string;
     phone?: string;
-    linkedin_url?: string;
-    portfolio_url?: string;
-    resume_url?: string;
-    skills: string[];
-    total_years_experience: number;
+    skills?: { skills: string[] } | any;
+    experience?: any;
+    ctc_current?: number;
+    ctc_expected?: number;
+    status: string; // CandidateStatus
     created_at: string;
     updated_at: string;
 }

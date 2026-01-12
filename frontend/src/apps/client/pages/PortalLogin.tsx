@@ -18,13 +18,15 @@ export default function PortalLogin() {
         setError("");
 
         try {
-            const { data } = await apiClient.post("/auth/login", {
+            const formData = new URLSearchParams({
                 username: email,
                 password: password,
-            }, {
+            });
+
+            const { data } = await apiClient.post("/auth/login", formData, {
                 headers: {
-                    "Content-Type": "application/x-www-form-urlencoded"
-                }
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
             });
 
             if (data.access_token) {

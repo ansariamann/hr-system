@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Drawer, Input, List, Typography, Button, Badge } from "antd";
+import { Drawer, Input, List, Typography, Button, Badge, Space } from "antd";
 import { RobotOutlined, SendOutlined } from "@ant-design/icons";
 
 const { Text } = Typography;
@@ -94,4 +94,3 @@ export const HrCopilot = () => {
     );
 };
 
-import { Space } from "antd";

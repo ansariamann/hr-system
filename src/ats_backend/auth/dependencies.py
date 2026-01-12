@@ -45,7 +45,8 @@ async def get_current_user(
     if not credentials:
         logger.warning("No credentials provided")
         raise credentials_exception
-    
+
+
     try:
         from .utils import verify_token
         token_data = await verify_token(credentials.credentials, db)
