@@ -94,6 +94,8 @@ async def create_candidate(
 async def list_candidates(
     name_pattern: Optional[str] = Query(None, description="Search by name pattern"),
     skills: Optional[str] = Query(None, description="Search by skills (comma-separated)"),
+    city: Optional[str] = Query(None, description="Search by location/city"),
+    max_experience: Optional[int] = Query(None, description="Filter by maximum years of experience"),
     candidate_status: Optional[str] = Query(None, description="Filter by candidate status"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records"),
@@ -103,7 +105,7 @@ async def list_candidates(
 ):
     """List candidates with optional filtering.
     
-    Supports filtering by name pattern, skills, and status.
+    Supports filtering by name pattern, skills, status, city, and max experience.
     Results are automatically filtered to the current client.
     """
     try:
@@ -124,6 +126,8 @@ async def list_candidates(
                 client_id=current_client.id,
                 name_pattern=name_pattern,
                 skills=skills_list,
+                location=city,
+                max_experience=max_experience,
                 status=candidate_status,
                 skip=skip,
                 limit=limit
@@ -137,6 +141,8 @@ async def list_candidates(
                 filters={
                     "name_pattern": name_pattern,
                     "skills": skills,
+                    "city": city,
+                    "max_experience": max_experience,
                     "status": candidate_status
                 }
             )

@@ -711,8 +711,8 @@ def validate_database_config() -> bool:
         
         # Test database URL construction
         db_url = settings.database_url
-        if not db_url or not db_url.startswith('postgresql://'):
-            raise ConfigurationError("Invalid database URL format")
+        if not db_url or not (db_url.startswith('postgresql://') or db_url.startswith('sqlite://')):
+            raise ConfigurationError("Invalid database URL format (must be postgresql:// or sqlite://)")
         
         logger.info("Database configuration validated successfully")
         return True

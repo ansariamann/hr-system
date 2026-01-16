@@ -14,6 +14,7 @@ import { CandidateList } from "./pages/candidates/list";
 import { CandidateShow } from "./pages/candidates/show";
 // import { CandidateEdit } from "./pages/candidates/edit";
 import { ApplicationList } from "./pages/applications/list";
+import { MasterDatabaseList } from "./pages/master/list";
 import { HrCopilot } from "./components/HrCopilot";
 import { DashboardOverview } from "./pages/dashboard/overview";
 import { JobList } from "./pages/jobs/list";
@@ -36,12 +37,16 @@ function HrAppContent() {
                     notificationProvider={useNotificationProvider}
                     authProvider={authProvider}
                     routerProvider={routerBindings}
-                    routerProvider={routerBindings}
                     resources={[
                         {
                             name: "dashboard",
                             list: "/admin",
                             meta: { label: "Dashboard" }
+                        },
+                        {
+                            name: "master",
+                            list: "/admin/master",
+                            meta: { label: "Master Database" }
                         },
                         {
                             name: "jobs",
@@ -78,6 +83,10 @@ function HrAppContent() {
                             }
                         >
                             <Route index element={<DashboardOverview />} />
+
+                            <Route path="master">
+                                <Route index element={<MasterDatabaseList />} />
+                            </Route>
 
                             <Route path="candidates">
                                 <Route index element={<CandidateList />} />

@@ -5,10 +5,10 @@ from enum import Enum
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
+from ats_backend.core.custom_types import GUID
 
 
 class ActorType(str, Enum):
@@ -22,15 +22,15 @@ class FSMTransitionLog(Base):
     
     __tablename__ = "fsm_transition_logs"
     
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    candidate_id = Column(PG_UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid4)
+    candidate_id = Column(GUID(), ForeignKey("candidates.id"), nullable=False)
     old_status = Column(String(50), nullable=False)
     new_status = Column(String(50), nullable=False)
-    actor_id = Column(PG_UUID(as_uuid=True), nullable=True)  # May be null for system actions
+    actor_id = Column(GUID(), nullable=True)  # May be null for system actions
     actor_type = Column(String(20), default=ActorType.SYSTEM, nullable=False)
     reason = Column(Text, nullable=False)
     is_terminal = Column(Boolean, default=False, nullable=False)
-    client_id = Column(PG_UUID(as_uuid=True), ForeignKey("clients.id"), nullable=False)
+    client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     
     # Relationships

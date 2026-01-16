@@ -4,7 +4,8 @@ from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, cast, Integer
+from sqlalchemy.dialects.postgresql import JSONB
 import structlog
 
 from ats_backend.models.candidate import Candidate
@@ -73,86 +74,88 @@ class CandidateRepository(AuditedRepository[Candidate]):
             )
         ).first()
     
-    def search_by_name(self, db: Session, client_id: UUID, name_pattern: str, limit: int = 10) -> List[Candidate]:
-        """Search candidates by name pattern within client context.
+    def search(
+        self, 
+        db: Session, 
+        client_id: UUID, 
+        name_pattern: Optional[str] = None, 
+        skills: Optional[List[str]] = None, 
+        location: Optional[str] = None,
+        max_experience: Optional[int] = None,
+        status: Optional[str] = None,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Candidate]:
+        """Search candidates with combined filters.
         
         Args:
             db: Database session
             client_id: Client UUID
-            name_pattern: Name pattern to search for
-            limit: Maximum number of results
-            
-        Returns:
-            List of matching candidates
-        """
-        return (
-            db.query(Candidate)
-            .filter(
-                and_(
-                    Candidate.client_id == client_id,
-                    Candidate.name.ilike(f"%{name_pattern}%")
-                )
-            )
-            .limit(limit)
-            .all()
-        )
-    
-    def search_by_skills(self, db: Session, client_id: UUID, skills: List[str], limit: int = 10) -> List[Candidate]:
-        """Search candidates by skills within client context.
-        
-        Args:
-            db: Database session
-            client_id: Client UUID
-            skills: List of skills to search for
-            limit: Maximum number of results
-            
-        Returns:
-            List of matching candidates
-        """
-        # Use JSONB contains operator to search for skills
-        skill_conditions = []
-        for skill in skills:
-            skill_conditions.append(
-                Candidate.skills.op('@>')({'skills': [skill]})
-            )
-        
-        return (
-            db.query(Candidate)
-            .filter(
-                and_(
-                    Candidate.client_id == client_id,
-                    or_(*skill_conditions)
-                )
-            )
-            .limit(limit)
-            .all()
-        )
-    
-    def get_by_status(self, db: Session, client_id: UUID, status: str, skip: int = 0, limit: int = 100) -> List[Candidate]:
-        """Get candidates by status within client context.
-        
-        Args:
-            db: Database session
-            client_id: Client UUID
-            status: Candidate status
+            name_pattern: Name pattern to search for (ilike)
+            skills: List of skills to search for (contains)
+            location: Location pattern to search for (ilike)
+            max_experience: Maximum years of experience (<=)
+            status: Candidate status filter
             skip: Number of records to skip
-            limit: Maximum number of records
+            limit: Maximum number of results
             
         Returns:
-            List of candidates with specified status
+            List of matching candidates
         """
+        conditions = [Candidate.client_id == client_id]
+        
+        if name_pattern:
+            conditions.append(Candidate.name.ilike(f"%{name_pattern}%"))
+            
+        if location:
+            conditions.append(Candidate.location.ilike(f"%{location}%"))
+            
+        if status:
+            conditions.append(Candidate.status == status)
+            
+        if skills:
+            # Use JSONB contains operator to search for ANY of the skills
+            # Or should it be ALL? "Python, React" usually implies AND or OR depending on UX.
+            # Let's assume OR for broad search, or loop for AND.
+            # The previous implementation was OR. Let's stick with OR for now?
+            # User request: "filters such as city,skills,etc".
+            # Usually skill search is "Find someone who knows Python OR default matches".
+            # But "Python, React" usually implies finding a fullstack dev (AND).
+            # Let's stick with the previous OR implementation logic but adaptable.
+            # Actually, previous implementation used OR.
+            skill_conditions = []
+            for skill in skills:
+                skill_conditions.append(
+                    Candidate.skills.op('@>')({'skills': [skill]})
+                )
+            if skill_conditions:
+                conditions.append(or_(*skill_conditions))
+        
+        if max_experience is not None:
+             # Query JSONB: experience->'years' <= max_experience
+             # We need to cast it to integer.
+             # Note: This assumes experience is stored as {"years": 5}.
+             conditions.append(
+                 cast(Candidate.experience['years'].astext, Integer) <= max_experience
+             )
+        
         return (
             db.query(Candidate)
-            .filter(
-                and_(
-                    Candidate.client_id == client_id,
-                    Candidate.status == status
-                )
-            )
+            .filter(and_(*conditions))
             .offset(skip)
             .limit(limit)
             .all()
         )
+
+    # Legacy methods kept for compatibility but should be deprecated or refactored to use search()
+    def search_by_name(self, db: Session, client_id: UUID, name_pattern: str, limit: int = 10) -> List[Candidate]:
+        return self.search(db, client_id, name_pattern=name_pattern, limit=limit)
+    
+    def search_by_skills(self, db: Session, client_id: UUID, skills: List[str], limit: int = 10) -> List[Candidate]:
+        return self.search(db, client_id, skills=skills, limit=limit)
+    
+    def get_by_status(self, db: Session, client_id: UUID, status: str, skip: int = 0, limit: int = 100) -> List[Candidate]:
+        return self.search(db, client_id, status=status, skip=skip, limit=limit)
     
     def find_potential_duplicates(
         self, 

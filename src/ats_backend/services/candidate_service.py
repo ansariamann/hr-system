@@ -110,6 +110,8 @@ class CandidateService:
         client_id: UUID,
         name_pattern: Optional[str] = None,
         skills: Optional[List[str]] = None,
+        location: Optional[str] = None,
+        max_experience: Optional[int] = None,
         status: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
@@ -121,6 +123,8 @@ class CandidateService:
             client_id: Client UUID
             name_pattern: Name pattern to search for (optional)
             skills: List of skills to search for (optional)
+            location: Location to search for (optional)
+            max_experience: Maximum years of experience (optional)
             status: Candidate status filter (optional)
             skip: Number of records to skip
             limit: Maximum number of records
@@ -128,16 +132,17 @@ class CandidateService:
         Returns:
             List of matching candidates
         """
-        if name_pattern:
-            return self.repository.search_by_name(db, client_id, name_pattern, limit)
-        elif skills:
-            return self.repository.search_by_skills(db, client_id, skills, limit)
-        elif status:
-            return self.repository.get_by_status(db, client_id, status, skip, limit)
-        else:
-            return self.repository.get_multi(
-                db, skip, limit, {"client_id": client_id}
-            )
+        return self.repository.search(
+            db, 
+            client_id, 
+            name_pattern=name_pattern, 
+            skills=skills, 
+            location=location,
+            max_experience=max_experience,
+            status=status,
+            skip=skip,
+            limit=limit
+        )
     
     def update_candidate(
         self,

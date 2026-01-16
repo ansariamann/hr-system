@@ -6,13 +6,13 @@ from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 from enum import Enum
 
-from sqlalchemy import Column, String, DateTime, Boolean, Integer, Text
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSON
+from sqlalchemy import Column, String, DateTime, Boolean, Integer, Text, JSON
 from sqlalchemy.orm import Session
 import structlog
 
 from ats_backend.core.base import Base
 from ats_backend.core.redis import get_redis
+from ats_backend.core.custom_types import GUID
 
 logger = structlog.get_logger(__name__)
 
@@ -46,11 +46,11 @@ class SecurityAuditLog(Base):
     
     __tablename__ = "security_audit_logs"
     
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid4)
     event_type = Column(String(50), nullable=False)
     severity = Column(String(20), nullable=False)
-    client_id = Column(PG_UUID(as_uuid=True), nullable=True)
-    user_id = Column(PG_UUID(as_uuid=True), nullable=True)
+    client_id = Column(GUID(), nullable=True)
+    user_id = Column(GUID(), nullable=True)
     ip_address = Column(String(45), nullable=True)
     user_agent = Column(Text, nullable=True)
     email = Column(String(255), nullable=True)

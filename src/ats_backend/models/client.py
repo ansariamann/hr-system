@@ -4,10 +4,10 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, DateTime
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
+from ats_backend.core.custom_types import GUID
 
 
 class Client(Base):
@@ -15,7 +15,7 @@ class Client(Base):
     
     __tablename__ = "clients"
     
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid4)
     name = Column(String(255), nullable=False)
     email_domain = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

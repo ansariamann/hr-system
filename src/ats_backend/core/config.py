@@ -75,9 +75,15 @@ class Settings(BaseSettings):
     # Runtime Configuration
     startup_time: Optional[datetime] = Field(default=None, description="System startup time")
     
+    # Custom Database URL (overrides postgres config)
+    custom_database_url: Optional[str] = Field(default=None, description="Direct database URL override")
+
     @property
     def database_url(self) -> str:
-        """Construct database URL from components."""
+        """Construct database URL from components or use override."""
+        if self.custom_database_url:
+            return self.custom_database_url
+            
         return (
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"

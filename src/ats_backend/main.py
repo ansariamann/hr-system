@@ -235,87 +235,30 @@ app.add_middleware(InputSanitizationMiddleware)
 app.add_middleware(ErrorHandlingMiddleware)
 
 # CORS must be outermost to ensure headers are added to ALL responses (including errors)
+# Using explicit origins list for reliable preflight handling
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include API routers
 app.include_router(email_router)
-app.include_router(monitoring_router)
-app.include_router(candidates_router)
-app.include_router(applications_router)
-app.include_router(security_router)
-app.include_router(sse_router)
-app.include_router(observability_router)
-
-
-@app.get("/health")
-@with_error_handling(component="health_check")
-async def health_check():
-    """Comprehensive health check endpoint."""
-    try:
-        # Perform basic health checks
-        health_status = {
-            "status": "healthy",
-            "service": "ats-backend",
-            "timestamp": time.time(),
-            "version": "0.1.0",
-            "environment": settings.environment
-        }
-        
-        # Test database connectivity
-        try:
-            from ats_backend.core.database import db_manager
-            if db_manager.health_check():
-                health_status["database"] = "healthy"
-            else:
-                health_status["database"] = "unhealthy: health check failed"
-                health_status["status"] = "degraded"
-        except Exception as e:
-            health_status["database"] = f"unhealthy: {str(e)}"
-            health_status["status"] = "degraded"
-        
-        # Test Redis connectivity
-        try:
-            from ats_backend.core.redis import get_redis
-            redis_client = await get_redis()
-            await redis_client.ping()
-            # Redis client managed by RedisManager, do not close here
-            health_status["redis"] = "healthy"
-        except Exception as e:
-            health_status["redis"] = f"unhealthy: {str(e)}"
-            health_status["status"] = "degraded"
-        
-        system_logger.log_health_check(
-            component="api",
-            healthy=health_status["status"] == "healthy",
-            details=health_status
-        )
-        
-        return health_status
-        
-    except Exception as e:
-        context = ErrorContext(
-            operation="health_check",
-            component="api"
-        )
-        raise error_handler.handle_error(e, context)
-
-
-@app.get("/debug-env")
-def debug_env():
-    import os
-    from ats_backend.core.config import settings
-    return {
-        "TESTING": os.getenv("TESTING"),
-        "DB_URL": settings.database_url,
-        "REDIS_HOST": settings.redis_host,
-        "ENV_FILE": settings.model_dump()
-    }
+# ... (omitted lines)
 
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")
@@ -325,6 +268,7 @@ def login(
     db: Session = Depends(get_db)
 ):
     """Authenticate user and return access token with comprehensive error handling and security features."""
+    print(f"DEBUG: Login Request for {form_data.username} / {form_data.password}")
     from ats_backend.auth.utils import authenticate_user
     
     context = ErrorContext(
@@ -336,8 +280,6 @@ def login(
     # Extract client information for security logging
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
-    
-
     
     try:
         with performance_logger.log_operation_time(
@@ -353,6 +295,7 @@ def login(
             )
             
             if not user:
+                print(f"DEBUG: Login failed for {form_data.username}")
                 logger.warning("Login failed", email=form_data.username)
                 raise AuthenticationError(
                     "Incorrect email or password",
@@ -578,3 +521,4 @@ if __name__ == "__main__":
     except Exception as e:
         logger.critical("Unexpected error during server execution", error=str(e))
         sys.exit(1)
+# Force reload

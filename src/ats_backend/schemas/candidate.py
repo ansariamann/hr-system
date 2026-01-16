@@ -14,6 +14,7 @@ class CandidateBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Candidate full name")
     email: Optional[EmailStr] = Field(None, description="Candidate email address")
     phone: Optional[str] = Field(None, max_length=50, description="Candidate phone number")
+    location: Optional[str] = Field(None, max_length=255, description="Candidate location/city")
     skills: Optional[Dict[str, Any]] = Field(None, description="Candidate skills in JSONB format")
     experience: Optional[Dict[str, Any]] = Field(None, description="Candidate experience in JSONB format")
     ctc_current: Optional[Decimal] = Field(None, ge=0, description="Current CTC in decimal format")
@@ -69,6 +70,7 @@ class CandidateUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=50)
+    location: Optional[str] = Field(None, max_length=255)
     skills: Optional[Dict[str, Any]] = None
     experience: Optional[Dict[str, Any]] = None
     ctc_current: Optional[Decimal] = Field(None, ge=0)

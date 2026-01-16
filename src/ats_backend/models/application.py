@@ -4,10 +4,10 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, DateTime, ForeignKey, Boolean, Text
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
+from ats_backend.core.custom_types import GUID
 
 
 class Application(Base):
@@ -15,9 +15,9 @@ class Application(Base):
     
     __tablename__ = "applications"
     
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    client_id = Column(PG_UUID(as_uuid=True), ForeignKey("clients.id"), nullable=False)
-    candidate_id = Column(PG_UUID(as_uuid=True), ForeignKey("candidates.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid4)
+    client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
+    candidate_id = Column(GUID(), ForeignKey("candidates.id"), nullable=False)
     job_title = Column(String(255), nullable=True)
     application_date = Column(DateTime, default=datetime.utcnow, nullable=False)
     status = Column(String(50), default="RECEIVED", nullable=False)

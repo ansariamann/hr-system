@@ -5,12 +5,12 @@ from enum import Enum
 from typing import Optional, Dict, Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import Session
 import structlog
 
 from .base import Base
+from ats_backend.core.custom_types import GUID
 
 logger = structlog.get_logger(__name__)
 
@@ -29,15 +29,15 @@ class AuditLog(Base):
     
     __tablename__ = "audit_logs"
     
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    client_id = Column(PG_UUID(as_uuid=True), ForeignKey("clients.id"), nullable=False)
-    user_id = Column(PG_UUID(as_uuid=True), nullable=True)  # May be null for system actions
+    id = Column(GUID(), primary_key=True, default=uuid4)
+    client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
+    user_id = Column(GUID(), nullable=True)  # May be null for system actions
     table_name = Column(String(255), nullable=False)
-    record_id = Column(PG_UUID(as_uuid=True), nullable=False)
+    record_id = Column(GUID(), nullable=False)
     action = Column(String(50), nullable=False)
-    old_values = Column(JSONB, nullable=True)
-    new_values = Column(JSONB, nullable=True)
-    changes = Column(JSONB, nullable=True)  # Specific fields that changed
+    old_values = Column(JSON, nullable=True)
+    new_values = Column(JSON, nullable=True)
+    changes = Column(JSON, nullable=True)  # Specific fields that changed
     timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
     ip_address = Column(String(45), nullable=True)  # IPv4 or IPv6
     user_agent = Column(Text, nullable=True)

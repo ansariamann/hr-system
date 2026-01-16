@@ -6,10 +6,10 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, EmailStr
 from sqlalchemy import Column, String, DateTime, Boolean, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
+from ats_backend.core.custom_types import GUID
 
 
 class User(Base):
@@ -17,12 +17,12 @@ class User(Base):
     
     __tablename__ = "users"
     
-    id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid4)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
-    client_id = Column(PG_UUID(as_uuid=True), ForeignKey("clients.id"), nullable=False)
+    client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
