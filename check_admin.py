@@ -11,12 +11,12 @@ from ats_backend.core.config import settings
 
 # Adjust the database URL if needed (e.g. for drivers not installed in this environment)
 # Assuming standard postgres or sqlite. The config should handle it.
-print(f"Database URL: {settings.DATABASE_URL}")
+print(f"Database URL: {settings.database_url}")
 
 try:
-    engine = create_engine(settings.DATABASE_URL)
+    engine = create_engine(settings.database_url)
     with engine.connect() as connection:
-        result = connection.execute(text("SELECT id, email, is_active, is_superuser FROM users WHERE email = 'admin@acmecorp.com'"))
+        result = connection.execute(text("SELECT id, email, is_active FROM users WHERE email = 'admin@acmecorp.com'"))
         user = result.fetchone()
         
         if user:

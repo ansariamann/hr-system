@@ -256,6 +256,11 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+@app.get("/health")
+def health_check():
+    """Health check endpoint for container orchestration systems."""
+    return {"status": "healthy"}
+
 # Include API routers
 app.include_router(email_router)
 # ... (omitted lines)

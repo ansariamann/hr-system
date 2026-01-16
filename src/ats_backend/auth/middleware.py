@@ -60,16 +60,16 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                     request.state.current_user_id = user.id
                     request.state.current_client_id = user.client_id
                     
-                    logger.debug("Client context set via middleware",
+                    logger.info("AUTH_DEBUG: Client context set via middleware",
                                user_id=str(user.id),
                                client_id=str(user.client_id),
                                path=request.url.path)
                 else:
-                    logger.warning("Invalid or inactive user", 
+                    logger.info("AUTH_DEBUG: Invalid or inactive user in middleware", 
                                  user_id=str(token_data.user_id) if token_data.user_id else None)
                     
         except Exception as e:
-            logger.warning("Authentication middleware error", error=str(e))
+            logger.info("AUTH_DEBUG: Authentication middleware error", error=str(e))
             # Continue without authentication rather than failing
         finally:
             # Clean up database session

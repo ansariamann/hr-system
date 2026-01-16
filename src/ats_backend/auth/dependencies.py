@@ -57,7 +57,7 @@ async def get_current_user(
         
         if token_data is None or token_data.user_id is None:
             print("DEBUG: get_current_user - token_data is None or user_id is None")
-            logger.warning("Invalid token data")
+            logger.info("AUTH_DEBUG: Invalid token data in dependencies")
             raise credentials_exception
         
         print(f"DEBUG: get_current_user - Looking for user with ID: {token_data.user_id}")
@@ -83,7 +83,7 @@ async def get_current_user(
         raise
     except Exception as e:
         print(f"DEBUG: get_current_user - Exception: {type(e).__name__}: {e}")
-        logger.error("Authentication failed", error=str(e))
+        logger.info("AUTH_DEBUG: Authentication failed in dependencies", error=str(e))
         raise credentials_exception
 
 
