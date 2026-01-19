@@ -240,12 +240,15 @@ ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5175",
+    "http://localhost:8080",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5175",
+    "http://127.0.0.1:8080",
     "http://127.0.0.1:3000",
 ]
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -263,7 +266,12 @@ def health_check():
 
 # Include API routers
 app.include_router(email_router)
-# ... (omitted lines)
+app.include_router(candidates_router)
+app.include_router(applications_router)
+app.include_router(monitoring_router)
+app.include_router(security_router)
+app.include_router(sse_router)
+app.include_router(observability_router)
 
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")
