@@ -1,3 +1,6 @@
-[submodule "frontend"]
-	path = frontend
+[submodule "frontend/hr-dashboard"]
+	path = frontend/hr-dashboard
 	url = https://github.com/ansariamann/talent-compass.git
+[submodule "frontend/client-portal"]
+	path = frontend/client-portal
+	url = https://github.com/ansariamann/hrclient.git
