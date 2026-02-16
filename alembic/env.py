@@ -9,8 +9,16 @@ import sys
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from ats_backend.core.database import Base
+from ats_backend.core.base import Base
 from ats_backend.core.config import settings
+
+# Import all models to ensure they are registered with Base.metadata
+from ats_backend.auth.models import User
+from ats_backend.models.candidate import Candidate
+from ats_backend.models.application import Application
+from ats_backend.models.client import Client
+from ats_backend.models.resume_job import ResumeJob
+from ats_backend.models.fsm_transition_log import FSMTransitionLog
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

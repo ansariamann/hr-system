@@ -34,6 +34,23 @@ class EmailAttachment(BaseModel):
             raise ValueError(f"File size {v} bytes exceeds maximum allowed size of {max_size} bytes")
         return v
 
+    @validator('content', pre=True)
+    def decode_base64_content(cls, v):
+        """Decode base64 content if provided as string."""
+        import base64
+        import binascii
+        
+        if isinstance(v, str):
+            try:
+                # Limit check to avoid trying to decode massive text strings that aren't base64
+                # But resume uploads will be large base64 strings.
+                # Just try to decode.
+                return base64.b64decode(v)
+            except (binascii.Error, ValueError):
+                # Fallback: if not valid base64/ascii, assume it's just a string to be encoded
+                return v.encode('utf-8')
+        return v
+
 
 class EmailMessage(BaseModel):
     """Email message model for ingestion."""

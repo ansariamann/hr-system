@@ -22,6 +22,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    role = Column(String(50), default="client_user", nullable=False)
     client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -32,6 +33,10 @@ class User(Base):
     def __repr__(self) -> str:
         return f"<User(id={self.id}, email='{self.email}')>"
 
+    @property
+    def client_name(self) -> str:
+        return self.client.name if self.client else "Unknown Client"
+
 
 # Pydantic models for API
 class UserBase(BaseModel):
@@ -39,6 +44,7 @@ class UserBase(BaseModel):
     email: EmailStr
     full_name: Optional[str] = None
     is_active: bool = True
+    role: str = "client_user"
 
 
 class UserCreate(UserBase):
@@ -51,6 +57,8 @@ class UserResponse(UserBase):
     """User response schema."""
     id: UUID
     client_id: UUID
+    role: str
+    client_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     
@@ -70,3 +78,4 @@ class TokenData(BaseModel):
     user_id: Optional[UUID] = None
     client_id: Optional[UUID] = None
     email: Optional[str] = None
+    role: Optional[str] = None

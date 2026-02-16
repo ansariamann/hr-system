@@ -28,6 +28,8 @@ from ats_backend.workers.email_tasks import (
 )
 from ats_backend.services.resume_job_service import ResumeJobService
 from ats_backend.schemas.resume_job import ResumeJobResponse
+from ats_backend.resume.parser import ResumeParser
+from pathlib import Path
 
 logger = structlog.get_logger(__name__)
 
@@ -336,6 +338,86 @@ async def get_resume_job(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get resume job: {str(e)}"
+        )
+
+
+@router.post("/jobs/{job_id}/parse")
+async def parse_resume_job(
+    job_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client)
+):
+    """Synchronously parse a resume uploaded via ingestion."""
+    try:
+        resume_job_service = ResumeJobService()
+        job = resume_job_service.get_job_by_id(db, job_id)
+        
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Resume job not found"
+            )
+            
+        if job.client_id != current_client.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this resume job"
+            )
+            
+        # Initialize resume parser
+        parser = ResumeParser()
+        
+        # Parse the resume file
+        file_path = Path(job.file_path)
+        if not file_path.exists():
+             raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Resume file not found at {file_path}"
+            )
+
+        parsing_result = parser.parse_file(file_path)
+        
+        if not parsing_result.success:
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Parsing failed: {parsing_result.error_message}"
+            )
+             
+        # Extract data
+        parsed_resume = parsing_result.parsed_resume
+        candidate_data = parsed_resume.to_candidate_data()
+        
+        # Format for frontend
+        response_data = {
+            "name": candidate_data.get("name"),
+            "email": candidate_data.get("email"),
+            "phone": candidate_data.get("phone"),
+            "location": candidate_data.get("location"),
+            "skills": [s for s in parsed_resume.skills], # Ensure list of strings
+            "experience_years": len(parsed_resume.experience), # Approximate years via entry count
+            "education": [e.degree for e in parsed_resume.education],
+            "raw_text_summary": parsed_resume.summary
+        }
+        
+        return {
+            "success": True,
+            "data": response_data,
+            "job_id": str(job_id)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Synchronous parsing failed",
+            job_id=str(job_id),
+            client_id=str(current_client.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Parsing failed: {str(e)}"
         )
 
 

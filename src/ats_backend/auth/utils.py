@@ -7,7 +7,7 @@ import os
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import structlog
 
 from ats_backend.core.config import settings
@@ -152,7 +152,7 @@ def authenticate_user(
 
 
 def get_user_by_id(db: Session, user_id: UUID) -> Optional[User]:
-    return db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    return db.query(User).options(joinedload(User.client)).filter(User.id == user_id, User.is_active == True).first()
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:

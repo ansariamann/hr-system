@@ -76,7 +76,7 @@ class DataExtractor:
         cleaned_text = self._clean_text(text)
         
         # Extract components
-        contact_info = self._extract_contact_info(cleaned_text)
+        contact_info = self._extract_contact_info(text)
         skills = self._extract_skills(cleaned_text)
         
         # Extract education using the original text (preserving newlines)
