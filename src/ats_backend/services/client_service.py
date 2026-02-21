@@ -2,6 +2,8 @@
 
 from typing import List, Optional
 from uuid import UUID
+import secrets
+import re
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -43,7 +45,7 @@ class ClientService:
             )
             
             db.add(client)
-            db.commit()
+            db.flush()  # Flush without committing - let caller control transaction
             db.refresh(client)
             
             logger.info("Client created", client_id=str(client.id), name=name)
@@ -53,6 +55,54 @@ class ClientService:
             db.rollback()
             logger.error("Client creation failed", name=name, error=str(e))
             raise ValueError(f"Failed to create client: {str(e)}")
+
+    @staticmethod
+    def _slugify(value: str) -> str:
+        slug = re.sub(r"[^a-z0-9]+", ".", value.lower()).strip(".")
+        return slug or "client"
+
+    @staticmethod
+    def _generate_temp_password(length: int = 12) -> str:
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%"
+        return "".join(secrets.choice(alphabet) for _ in range(length))
+
+    @staticmethod
+    def _generate_unique_admin_email(
+        db: Session,
+        client_name: str,
+        email_domain: Optional[str]
+    ) -> str:
+        base_local = "client.admin"
+        domain = email_domain or f"{ClientService._slugify(client_name)}.local"
+        candidate_email = f"{base_local}@{domain}"
+
+        counter = 1
+        while db.query(User).filter(User.email == candidate_email).first():
+            candidate_email = f"{base_local}{counter}@{domain}"
+            counter += 1
+
+        return candidate_email
+
+    @staticmethod
+    def provision_client_with_admin(
+        db: Session,
+        name: str,
+        email_domain: Optional[str] = None
+    ) -> tuple[Client, User, str]:
+        """Create client and provision a default client_admin user."""
+        client = ClientService.create_client(db, name=name, email_domain=email_domain)
+        admin_email = ClientService._generate_unique_admin_email(db, name, email_domain)
+        admin_password = ClientService._generate_temp_password()
+
+        user = ClientService.create_client_admin_user(
+            db=db,
+            client_id=client.id,
+            email=admin_email,
+            password=admin_password,
+            full_name=f"{name} Admin"
+        )
+
+        return client, user, admin_password
     
     @staticmethod
     def get_client_by_id(db: Session, client_id: UUID) -> Optional[Client]:
@@ -137,7 +187,7 @@ class ClientService:
             if email_domain is not None:
                 client.email_domain = email_domain
             
-            db.commit()
+            db.flush()  # Flush without committing - let caller control transaction
             db.refresh(client)
             
             logger.info("Client updated", client_id=str(client_id))
@@ -170,7 +220,7 @@ class ClientService:
         
         try:
             db.delete(client)
-            db.commit()
+            db.flush()  # Flush without committing - let caller control transaction
             
             logger.info("Client deleted", client_id=str(client_id))
             return True
@@ -218,6 +268,8 @@ class ClientService:
             }
             
             user = create_user(db, user_data)
+            user.role = "client_admin"
+            db.flush()
             logger.info("Admin user created for client", 
                        client_id=str(client_id), 
                        user_id=str(user.id),

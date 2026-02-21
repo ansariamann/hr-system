@@ -79,7 +79,7 @@ class ResumeProcessingTask(Task):
         )
 
 
-@celery_app.task(bind=True, base=ResumeProcessingTask, name="process_resume_file")
+@celery_app.task(bind=True, base=ResumeProcessingTask)
 def process_resume_file(
     self,
     client_id: str,
@@ -302,7 +302,7 @@ def process_resume_file(
         raise self.retry(exc=e)
 
 
-@celery_app.task(bind=True, name="batch_process_resumes")
+@celery_app.task(bind=True)
 def batch_process_resumes(
     self,
     client_id: str,
@@ -401,7 +401,7 @@ def batch_process_resumes(
         }
 
 
-@celery_app.task(bind=True, name="reprocess_failed_resume")
+@celery_app.task(bind=True)
 def reprocess_failed_resume(
     self,
     client_id: str,
@@ -507,7 +507,7 @@ def reprocess_failed_resume(
         }
 
 
-@celery_app.task(bind=True, name="validate_resume_parsing")
+@celery_app.task(bind=True)
 def validate_resume_parsing(
     self,
     file_path: str,

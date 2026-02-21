@@ -53,7 +53,7 @@ class ApplicationService:
                 user_id=user_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
-                **application_data.dict()
+                **application_data.dict(exclude={"client_id"}, exclude_none=True)
             )
             
             logger.info(

@@ -96,7 +96,7 @@ class FSMService:
             # - Logging of the transition
             candidate.status = new_status
             
-            self.db.commit()
+            self.db.flush()  # Flush without committing - let caller control transaction
             
             logger.info(
                 "Candidate status transition completed",
@@ -246,7 +246,7 @@ class FSMService:
                 else:
                     raise ValueError(f"Invalid field: {field}")
             
-            self.db.commit()
+            self.db.flush()  # Flush without committing - let caller control transaction
             
             logger.info(
                 "Candidate updated with protection",

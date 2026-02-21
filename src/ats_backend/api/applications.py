@@ -11,6 +11,7 @@ from ats_backend.auth.dependencies import get_current_user, get_current_client
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
 from ats_backend.services.application_service import ApplicationService
+from ats_backend.services.client_service import ClientService
 from ats_backend.schemas.application import (
     ApplicationCreate,
     ApplicationUpdate,
@@ -47,9 +48,17 @@ async def create_application(
             user_agent = request.headers.get("user-agent")
             
             application_service = ApplicationService()
+            target_client_id = application_data.client_id or current_client.id
+            target_client = ClientService.get_client_by_id(db, target_client_id)
+            if not target_client:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Target client not found"
+                )
+
             application = application_service.create_application(
                 db=db,
-                client_id=current_client.id,
+                client_id=target_client_id,
                 application_data=application_data,
                 user_id=current_user.id,
                 ip_address=ip_address,
@@ -59,7 +68,7 @@ async def create_application(
             logger.info(
                 "Application created via API",
                 application_id=str(application.id),
-                client_id=str(current_client.id),
+                client_id=str(target_client_id),
                 user_id=str(current_user.id),
                 candidate_id=str(application.candidate_id),
                 status=application.status

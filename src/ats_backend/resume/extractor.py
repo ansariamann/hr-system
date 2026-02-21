@@ -1,8 +1,7 @@
 """Data extraction utilities for resume parsing."""
 
 import re
-from decimal import Decimal, InvalidOperation
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 import structlog
 
 try:
@@ -32,13 +31,13 @@ class DataExtractor:
         """Initialize data extractor with patterns and configurations."""
         # Email pattern
         self.email_pattern = re.compile(
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
         )
         
         # Phone patterns
         self.phone_patterns = [
-            re.compile(r'(\+91[-.\s]?)?[6-9]\d{9}'),  # Indian mobile
-            re.compile(r'\b\d{10}\b'),  # 10-digit numbers
+            # International-like phone candidates; final validation is done in _normalize_phone.
+            re.compile(r"(?:\+?\d[\d\-\s().]{8,}\d)"),
         ]
         
         # Name patterns
@@ -62,11 +61,15 @@ class DataExtractor:
         
         # Common skill categories
         self.skill_categories = {
-            'programming': ['python', 'java', 'javascript', 'c++', 'c#', 'php', 'ruby'],
-            'web': ['html', 'css', 'react', 'angular', 'vue', 'nodejs'],
-            'database': ['mysql', 'postgresql', 'mongodb', 'redis'],
-            'cloud': ['aws', 'azure', 'gcp', 'docker', 'kubernetes'],
+            'languages': ['python', 'java', 'javascript', 'typescript', 'c++', 'c#', 'php', 'ruby', 'go', 'rust', 'swift', 'kotlin', 'scala', 'perl', 'r', 'matlab', 'dart', 'shell', 'bash', 'sql', 'html', 'css'],
+            'frameworks': ['react', 'angular', 'vue', 'next.js', 'django', 'flask', 'fastapi', 'spring', 'spring boot', 'laravel', 'rails', 'ruby on rails', 'express', 'node.js', 'dotnet', '.net', 'tensorflow', 'pytorch', 'pandas', 'numpy', 'scikit-learn', 'keras', 'flutter', 'react native'],
+            'databases': ['mysql', 'postgresql', 'postgres', 'mongodb', 'redis', 'cassandra', 'elasticsearch', 'oracle', 'sql server', 'sqlite', 'dynamodb', 'firebase', 'mariadb'],
+            'cloud': ['aws', 'azure', 'gcp', 'google cloud', 'docker', 'kubernetes', 'jenkins', 'circleci', 'gitlab ci', 'github actions', 'terraform', 'ansible', 'prometheus', 'grafana', 'elk stack'],
+            'tools': ['git', 'github', 'gitlab', 'bitbucket', 'jira', 'confluence', 'slack', 'trello', 'asana', 'figma', 'postman', 'swagger', 'vs code', 'pycharm', 'intellij', 'eclipse'],
+            'concepts': ['rest api', 'graphql', 'grpc', 'microservices', 'serverless', 'agile', 'scrum', 'ci/cd', 'devops', 'machine learning', 'artificial intelligence', 'data science', 'big data', 'blockchain'],
+            'soft_skills': ['leadership', 'communication', 'teamwork', 'problem solving', 'critical thinking', 'time management', 'adaptability', 'mentoring']
         }
+        self._skill_patterns = self._build_skill_patterns()
     
     def extract_data(self, text: str) -> Dict[str, Any]:
         """Extract all structured data from resume text."""
@@ -97,15 +100,67 @@ class DataExtractor:
     
     def _clean_text(self, text: str) -> str:
         """Clean and normalize text for better parsing."""
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\r\n?", "\n", text)
+        text = re.sub(r"[ \t]+", " ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
         return text.strip()
+
+    def _build_skill_patterns(self) -> Dict[str, re.Pattern]:
+        patterns: Dict[str, re.Pattern] = {}
+        for skill_list in self.skill_categories.values():
+            for skill_name in skill_list:
+                escaped = re.escape(skill_name)
+                patterns[skill_name] = re.compile(
+                    rf"(?<![A-Za-z0-9]){escaped}(?![A-Za-z0-9])",
+                    re.IGNORECASE,
+                )
+        return patterns
+
+    def _normalize_phone(self, phone_candidate: str) -> str:
+        digits = re.sub(r"[^\d+]", "", phone_candidate)
+        if digits.startswith("00"):
+            digits = f"+{digits[2:]}"
+        if digits.count("+") > 1:
+            digits = digits.replace("+", "")
+        if "+" in digits and not digits.startswith("+"):
+            digits = digits.replace("+", "")
+        digit_count = len(re.sub(r"\D", "", digits))
+        if 10 <= digit_count <= 15:
+            return digits
+        return ""
+
+    def _extract_name(self, text: str) -> str:
+        header_stop_words = {
+            "resume", "curriculum", "vitae", "profile", "summary", "objective",
+            "experience", "education", "skills", "projects", "certifications",
+        }
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+        # Prefer first non-header lines, where names typically appear.
+        for line in lines[:12]:
+            line_lower = line.lower()
+            if any(token in line_lower for token in ("@", "http", "linkedin", "github")):
+                continue
+            if any(char.isdigit() for char in line):
+                continue
+            if any(word in header_stop_words for word in line_lower.split()):
+                continue
+            if len(line.split()) < 2 or len(line.split()) > 5:
+                continue
+            if len(line) > 60:
+                continue
+            if re.search(r"[^A-Za-z.\-'\s]", line):
+                continue
+            normalized = " ".join(word.capitalize() for word in line.split())
+            return normalized
+        return ""
     
     def _extract_contact_info(self, text: str) -> ContactInfo:
         """Extract contact information from text."""
         contact_info = ContactInfo()
         
         # Extract email
-        email_matches = self.email_pattern.findall(text)
+        email_matches = list(dict.fromkeys(self.email_pattern.findall(text)))
         if email_matches:
             try:
                 validated = validate_email(email_matches[0])
@@ -117,19 +172,23 @@ class DataExtractor:
         for pattern in self.phone_patterns:
             phone_matches = pattern.findall(text)
             if phone_matches:
-                phone = re.sub(r'[^\d+]', '', phone_matches[0])
-                if len(phone) >= 10:
+                phone = self._normalize_phone(phone_matches[0])
+                if phone:
                     contact_info.phone = phone
                     break
         
-        # Extract name
-        for pattern in self.name_patterns:
-            name_matches = pattern.findall(text)
-            if name_matches:
-                name = name_matches[0].strip()
-                if len(name.split()) >= 2:
-                    contact_info.name = name
-                    break
+        # Extract name using line-based heuristic first, regex fallback second.
+        extracted_name = self._extract_name(text)
+        if extracted_name:
+            contact_info.name = extracted_name
+        else:
+            for pattern in self.name_patterns:
+                name_matches = pattern.findall(text)
+                if name_matches:
+                    name = name_matches[0].strip()
+                    if len(name.split()) >= 2:
+                        contact_info.name = name
+                        break
         
         return contact_info
     
@@ -229,12 +288,12 @@ class DataExtractor:
     def _extract_skills(self, text: str) -> List[Skill]:
         """Extract skills from text."""
         skills = []
-        text_lower = text.lower()
         
         # Extract skills by category
         for category, skill_list in self.skill_categories.items():
             for skill_name in skill_list:
-                if skill_name.lower() in text_lower:
+                skill_pattern = self._skill_patterns.get(skill_name)
+                if skill_pattern and skill_pattern.search(text):
                     skills.append(Skill(name=skill_name, category=category))
         
         # Remove duplicates
@@ -253,16 +312,18 @@ class DataExtractor:
         score = 0.0
         
         if contact_info.name:
-            score += 0.3
+            score += 0.25
         if contact_info.email:
-            score += 0.2
+            score += 0.25
         if contact_info.phone:
-            score += 0.1
+            score += 0.15
         if skills:
             score += 0.2
-            if len(skills) >= 3:
+            if len(skills) >= 5:
                 score += 0.1
         if education:
+            score += 0.05
+        if experience:
             score += 0.1
         
         return min(score, 1.0)

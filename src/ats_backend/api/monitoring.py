@@ -10,10 +10,31 @@ from ..core.health import health_checker
 from ..core.observability import observability_system
 from ..core.alerts import alert_manager
 from ..core.config import settings
+from ..core.database import db_manager
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/monitoring", tags=["monitoring"])
+
+
+@router.get("/database/source", summary="Active database source details")
+async def database_source() -> Dict[str, Any]:
+    """Return active database source metadata used by the backend runtime."""
+    try:
+        from sqlalchemy.engine.url import make_url
+
+        parsed = make_url(settings.database_url)
+        return {
+            "engine": parsed.drivername.split("+")[0],
+            "host": parsed.host,
+            "port": parsed.port,
+            "database": parsed.database,
+            "connected": db_manager.health_check(),
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+    except Exception as e:
+        logger.error("Failed to read database source", error=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to read database source: {str(e)}")
 
 
 @router.get("/health", summary="Comprehensive health check")

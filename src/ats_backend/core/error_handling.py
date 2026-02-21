@@ -609,6 +609,7 @@ def with_error_handling(
 ):
     """Decorator for automatic error handling."""
     import inspect
+    from starlette.exceptions import HTTPException
 
     def decorator(func: Callable) -> Callable:
         if inspect.iscoroutinefunction(func):
@@ -621,6 +622,8 @@ def with_error_handling(
                 
                 try:
                     return await func(*args, **kwargs)
+                except HTTPException:
+                    raise
                 except Exception as e:
                     error_handler = ErrorHandler()
                     ats_error = error_handler.handle_error(e, context)
@@ -636,6 +639,8 @@ def with_error_handling(
                 
                 try:
                     return func(*args, **kwargs)
+                except HTTPException:
+                    raise
                 except Exception as e:
                     error_handler = ErrorHandler()
                     ats_error = error_handler.handle_error(e, context)

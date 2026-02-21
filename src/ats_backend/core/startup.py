@@ -190,8 +190,8 @@ class StartupManager:
         
         # Test email processing integration
         try:
-            from ..email.server import EmailServer
-            # Basic validation of email server configuration
+            from ..email.server import EmailSender
+            # Basic validation of email sender configuration
             integration_checks['email_processing'] = True
             self.logger.info("Email processing integration validated")
             

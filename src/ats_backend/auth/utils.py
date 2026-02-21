@@ -23,8 +23,35 @@ def get_pwd_context():
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
     logger.debug("Verifying password", extra={"plain_password": plain_password, "hashed_password": hashed_password})
-    pwd_context = get_pwd_context()
-    return pwd_context.verify(plain_password, hashed_password)
+    
+    # Try using bcrypt directly first, as passlib has issues with newer bcrypt versions
+    try:
+        import bcrypt
+        
+        # Ensure correct types for bcrypt
+        if isinstance(hashed_password, str):
+            hashed_password_bytes = hashed_password.encode('utf-8')
+        else:
+            hashed_password_bytes = hashed_password
+            
+        plain_password_bytes = plain_password.encode('utf-8')
+        
+        # Handle > 72 bytes pre-hashing logic (consistent with get_password_hash)
+        import hashlib
+        if len(plain_password_bytes) > 72:
+            plain_password_bytes = hashlib.sha256(plain_password_bytes).hexdigest().encode('utf-8')
+            
+        # Verify
+        return bcrypt.checkpw(plain_password_bytes, hashed_password_bytes)
+        
+    except Exception as e:
+        logger.warning(f"Direct bcrypt verification failed: {e}, attempting passlib fallback")
+        try:
+            pwd_context = get_pwd_context()
+            return pwd_context.verify(plain_password, hashed_password)
+        except Exception as pe:
+             logger.error(f"Passlib fallback failed: {pe}")
+             return False
 
 
 def get_password_hash(password: str) -> str:
@@ -171,6 +198,6 @@ def create_user(db: Session, user_create: dict) -> User:
     )
     
     db.add(db_user)
-    db.commit()
+    db.flush()  # Flush without committing - let caller control transaction
     db.refresh(db_user)
     return db_user

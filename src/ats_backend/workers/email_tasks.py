@@ -73,7 +73,7 @@ class EmailProcessingTask(Task):
         )
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="process_email_message")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def process_email_message(
     self,
     client_id: str,
@@ -190,7 +190,7 @@ def process_email_message(
         metrics_collector.finish_processing_metrics(processing_metrics)
 
 
-@celery_app.task(bind=True, name="cleanup_old_files")
+@celery_app.task(bind=True)
 def cleanup_old_files(self, days_old: int = 30) -> Dict[str, Any]:
     """Clean up old files from storage.
     
@@ -241,7 +241,7 @@ def cleanup_old_files(self, days_old: int = 30) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, name="cleanup_failed_jobs")
+@celery_app.task(bind=True)
 def cleanup_failed_jobs(
     self,
     client_id: str,
@@ -306,7 +306,7 @@ def cleanup_failed_jobs(
         }
 
 
-@celery_app.task(bind=True, name="validate_email_format")
+@celery_app.task(bind=True)
 def validate_email_format(self, email_data: Dict[str, Any]) -> Dict[str, Any]:
     """Validate email message format asynchronously.
     
@@ -362,7 +362,7 @@ def validate_email_format(self, email_data: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, name="get_processing_stats")
+@celery_app.task(bind=True)
 def get_processing_stats(
     self,
     client_id: str,
@@ -421,7 +421,7 @@ def get_processing_stats(
         }
 
 
-@celery_app.task(bind=True, name="cleanup_failed_jobs_all_clients")
+@celery_app.task(bind=True)
 def cleanup_failed_jobs_all_clients(
     self,
     max_age_hours: int = 24
@@ -509,7 +509,7 @@ def cleanup_failed_jobs_all_clients(
         }
 
 
-@celery_app.task(bind=True, name="health_check_workers")
+@celery_app.task(bind=True)
 def health_check_workers(self) -> Dict[str, Any]:
     """Periodic health check task for workers.
     
@@ -604,7 +604,7 @@ def health_check_workers(self) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, name="monitor_system_performance")
+@celery_app.task(bind=True)
 def monitor_system_performance(self) -> Dict[str, Any]:
     """Monitor system performance metrics.
     
@@ -700,7 +700,7 @@ def monitor_system_performance(self) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, name="health_check_workers")
+@celery_app.task(bind=True)
 def health_check_workers(self) -> Dict[str, Any]:
     """Periodic health check task for workers.
     
@@ -848,7 +848,7 @@ def health_check_workers(self) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, name="health_check_workers")
+@celery_app.task(bind=True)
 def health_check_workers(self) -> Dict[str, Any]:
     """Periodic health check task for workers.
     
@@ -945,7 +945,7 @@ def health_check_workers(self) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, name="monitor_system_performance")
+@celery_app.task(bind=True)
 def monitor_system_performance(self) -> Dict[str, Any]:
     """Monitor system performance metrics.
     
@@ -1036,7 +1036,7 @@ def monitor_system_performance(self) -> Dict[str, Any]:
         }
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="monitor_system_performance")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def monitor_system_performance(self):
     """Monitor system performance and trigger alerts."""
     try:
@@ -1089,7 +1089,7 @@ def monitor_system_performance(self):
         raise
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="health_check_workers")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def health_check_workers(self):
     """Perform comprehensive health check of workers and system."""
     try:
@@ -1136,7 +1136,7 @@ def health_check_workers(self):
         }
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="monitor_queue_health")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def monitor_queue_health(self):
     """Monitor queue health and alert on issues."""
     try:
@@ -1244,7 +1244,7 @@ def monitor_queue_health(self):
         }
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="cleanup_stale_tasks")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def cleanup_stale_tasks(self):
     """Clean up stale tasks and metrics."""
     try:
@@ -1277,7 +1277,7 @@ def cleanup_stale_tasks(self):
         }
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="collect_performance_metrics")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def collect_performance_metrics(self, operation: Optional[str] = None):
     """Collect and store performance metrics."""
     try:
@@ -1316,7 +1316,7 @@ def collect_performance_metrics(self, operation: Optional[str] = None):
         raise
 
 
-@celery_app.task(bind=True, base=EmailProcessingTask, name="generate_observability_report")
+@celery_app.task(bind=True, base=EmailProcessingTask)
 def generate_observability_report(self, hours_back: int = 24):
     """Generate comprehensive observability report."""
     try:

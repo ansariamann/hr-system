@@ -137,7 +137,7 @@ class ApplicationRepository(AuditedRepository[Application]):
             return True
         
         application.soft_delete()
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Application soft deleted",
@@ -197,7 +197,7 @@ class ApplicationRepository(AuditedRepository[Application]):
             return True
         
         application.deleted_at = None
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Application restored",
@@ -324,7 +324,7 @@ class ApplicationRepository(AuditedRepository[Application]):
         
         application.flagged_for_review = True
         application.flag_reason = flag_reason
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Application flagged for review",
@@ -350,7 +350,7 @@ class ApplicationRepository(AuditedRepository[Application]):
         
         application.flagged_for_review = False
         application.flag_reason = None
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info("Application unflagged", application_id=str(application_id))
         return True

@@ -57,3 +57,12 @@ class ClientResponse(ClientBase):
     
     class Config:
         from_attributes = True
+
+
+class ClientProvisionResponse(ClientResponse):
+    """Response returned when provisioning a client with credentials."""
+
+    credentials_generated: bool = False
+    admin_email: Optional[str] = None
+    admin_password: Optional[str] = None
+    portal_login_url: Optional[str] = None

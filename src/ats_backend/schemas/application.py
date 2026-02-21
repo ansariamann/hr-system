@@ -39,7 +39,9 @@ class ApplicationBase(BaseModel):
 
 class ApplicationCreate(ApplicationBase):
     """Schema for creating a new application."""
-    pass
+    client_id: Optional[UUID] = Field(
+        None, description="Target client UUID; defaults to current authenticated client if omitted"
+    )
 
 
 class ApplicationUpdate(BaseModel):

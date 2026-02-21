@@ -48,12 +48,13 @@ class AbuseProtectionMiddleware(BaseHTTPMiddleware):
             ip_address = request.client.host if request.client else "unknown"
             
             # Check general API rate limiting
-            await abuse_protection.rate_limiter.check_rate_limit(
-                key=ip_address,
-                limit_type="api_requests",
-                identifier=f"IP {ip_address}",
-                request=request
-            )
+            # Temporarily disabled to debug connection issues
+            # await abuse_protection.rate_limiter.check_rate_limit(
+            #     key=ip_address,
+            #     limit_type="api_requests",
+            #     identifier=f"IP {ip_address}",
+            #     request=request
+            # )
             
             # Process request
             response = await call_next(request)

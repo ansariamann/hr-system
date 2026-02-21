@@ -1,21 +1,15 @@
 """Resume parsing engine with PDF text extraction and OCR capabilities."""
 
-import os
-import io
 import time
 import mimetypes
 from pathlib import Path
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, Union, Tuple
 import structlog
 
 # PDF processing
 import PyPDF2
-from PIL import Image
+from PIL import Image, ImageFilter, ImageOps
 import pytesseract
-
-# Text processing
-import re
-from decimal import Decimal
 
 from ats_backend.core.config import settings
 from ats_backend.resume.models import ParsedResume, ParsingResult
@@ -47,6 +41,69 @@ class ResumeParser:
         }
         
         logger.info("Resume parser initialized")
+
+    def _preprocess_image_for_ocr(self, image: Image.Image) -> Image.Image:
+        """Preprocess image to improve OCR quality across scanned resumes."""
+        if image.mode != "L":
+            image = image.convert("L")
+
+        # Improve contrast, suppress salt-and-pepper noise, then binarize.
+        image = ImageOps.autocontrast(image)
+        image = image.filter(ImageFilter.MedianFilter(size=3))
+
+        threshold = 165
+        image = image.point(lambda px: 255 if px > threshold else 0, mode="1")
+        image = image.convert("L")
+
+        # Upscale for small-font resumes to improve OCR character recognition.
+        width, height = image.size
+        upscale_factor = 2 if max(width, height) < 2200 else 1
+        if upscale_factor > 1:
+            image = image.resize(
+                (width * upscale_factor, height * upscale_factor),
+                Image.Resampling.LANCZOS,
+            )
+
+        return image
+
+    def _score_ocr_text(self, text: str) -> float:
+        """Compute a heuristic score to select best OCR pass."""
+        stripped = text.strip()
+        if not stripped:
+            return 0.0
+
+        length = len(stripped)
+        alpha_chars = sum(1 for ch in stripped if ch.isalpha())
+        alnum_chars = sum(1 for ch in stripped if ch.isalnum())
+        lines = [ln for ln in stripped.splitlines() if ln.strip()]
+        avg_line_len = (sum(len(ln.strip()) for ln in lines) / len(lines)) if lines else 0
+
+        alpha_ratio = alpha_chars / max(length, 1)
+        alnum_ratio = alnum_chars / max(length, 1)
+        structure_bonus = 0.2 if 15 <= avg_line_len <= 120 else 0.0
+
+        return (length * 0.01) + (alpha_ratio * 30) + (alnum_ratio * 10) + structure_bonus
+
+    def _run_best_effort_ocr(self, image: Image.Image) -> Tuple[str, str]:
+        """Run multi-pass OCR and return best result + OCR mode used."""
+        processed = self._preprocess_image_for_ocr(image)
+        psm_modes = [6, 4, 3, 11]
+
+        best_text = ""
+        best_score = 0.0
+        best_mode = 6
+
+        for psm in psm_modes:
+            config = f"--oem 3 --psm {psm} -c preserve_interword_spaces=1"
+            text = pytesseract.image_to_string(processed, config=config)
+            score = self._score_ocr_text(text)
+            if score > best_score:
+                best_score = score
+                best_text = text
+                best_mode = psm
+
+        normalized_text = "\n".join(line.rstrip() for line in best_text.splitlines())
+        return normalized_text, f"psm_{best_mode}"
     
     def parse_file(
         self,
@@ -241,13 +298,11 @@ class ResumeParser:
                 
                 for i, image in enumerate(images):
                     try:
-                        # Apply OCR to each page image
-                        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,@+()-/:; '
-                        ocr_text = pytesseract.image_to_string(image, config=custom_config)
+                        ocr_text, ocr_mode = self._run_best_effort_ocr(image)
                         
                         if ocr_text and ocr_text.strip():
                             text_content.append(ocr_text)
-                            logger.debug(f"OCR extracted text from page {i + 1}")
+                            logger.debug("OCR extracted text from page", page=i + 1, mode=ocr_mode)
                     
                     except Exception as page_e:
                         logger.debug(f"Failed to OCR page {i + 1}: {page_e}")
@@ -349,19 +404,16 @@ class ResumeParser:
             if image.mode != 'RGB':
                 image = image.convert('RGB')
             
-            # Apply OCR with optimized configuration
-            # PSM 6 assumes uniform block of text
-            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,@+()-/:; '
-            
-            ocr_text = pytesseract.image_to_string(image, config=custom_config)
+            ocr_text, ocr_mode = self._run_best_effort_ocr(image)
             
             if ocr_text and ocr_text.strip():
                 logger.info("Image OCR extraction successful", 
                           text_length=len(ocr_text),
-                          image_size=image.size)
+                          image_size=image.size,
+                          ocr_mode=ocr_mode)
                 return {
                     'text': ocr_text,
-                    'method': 'image_ocr_extraction'
+                    'method': f'image_ocr_extraction_{ocr_mode}'
                 }
             else:
                 logger.warning("No text extracted from image")

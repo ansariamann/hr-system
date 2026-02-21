@@ -2,7 +2,11 @@
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+
+import shutil
+from pathlib import Path
+import os
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File
 from sqlalchemy.orm import Session
 import structlog
 
@@ -16,6 +20,9 @@ from ats_backend.schemas.candidate import (
     CandidateUpdate,
     CandidateResponse
 )
+
+from ats_backend.resume.parser import ResumeParser
+from ats_backend.core.config import settings
 from ats_backend.core.logging import performance_logger
 
 logger = structlog.get_logger(__name__)
@@ -90,12 +97,136 @@ async def create_candidate(
         )
 
 
+@router.post("/upload", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
+async def upload_resume(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client)
+):
+    """Upload resume and create candidate directly.
+    
+    Parses the uploaded resume and creates a candidate record.
+    If parsing fails to extract a name, falls back to the filename.
+    """
+    temp_file_path = None
+    keep_uploaded_file = False
+    try:
+        with performance_logger.log_operation_time(
+            "upload_resume",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id)
+        ):
+            # Create uploads directory if not exists
+            upload_dir = Path("uploads")
+            upload_dir.mkdir(exist_ok=True)
+            
+            # Save file temporarily
+            file_ext = Path(file.filename).suffix
+            temp_file_name = f"upload_{current_client.id}_{UUID(int=0)}_{file.filename}" # Placeholder UUID to avoid extra import if not needed
+            # Better unique name
+            import uuid
+            temp_file_name = f"upload_{uuid.uuid4()}{file_ext}"
+            temp_file_path = upload_dir / temp_file_name
+            
+            with open(temp_file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            # Parse resume
+            parser = ResumeParser()
+            parse_result = parser.parse_file(temp_file_path, content_type=file.content_type)
+            
+            candidate_data_dict = {}
+            candidate_remark = f"Resume uploaded: {file.filename}"
+            
+            if parse_result.success and parse_result.parsed_resume:
+                parsed = parse_result.parsed_resume
+                candidate_data_dict = parsed.to_candidate_data()
+                
+                # Append summary to remark if available
+                if parsed.summary:
+                     candidate_remark += f"\n\nSummary: {parsed.summary[:500]}..."
+            
+            # Prepare candidate creation data
+            # Fallback for name if parsing failed needed
+            name = candidate_data_dict.get("name")
+            if not name:
+                name = Path(file.filename).stem
+                
+            create_data = CandidateCreate(
+                name=name,
+                email=candidate_data_dict.get("email"),
+                phone=candidate_data_dict.get("phone"),
+                location=candidate_data_dict.get("location"),
+                resume_file_path=f"/uploads/{temp_file_name}",
+                skills=candidate_data_dict.get("skills"),
+                experience=candidate_data_dict.get("experience"),
+                ctc_current=candidate_data_dict.get("ctc_current"),
+                ctc_expected=candidate_data_dict.get("ctc_expected"),
+                remark=candidate_remark,
+                status="ACTIVE"
+            )
+            
+            # Get request metadata
+            ip_address = request.client.host if request.client else None
+            user_agent = request.headers.get("user-agent")
+            
+            # Create candidate
+            candidate_service = CandidateService()
+            candidate = candidate_service.create_candidate(
+                db=db,
+                client_id=current_client.id,
+                candidate_data=create_data,
+                user_id=current_user.id,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
+            
+            logger.info(
+                "Candidate created via upload",
+                candidate_id=str(candidate.id),
+                client_id=str(current_client.id),
+                user_id=str(current_user.id),
+                filename=file.filename
+            )
+            keep_uploaded_file = True
+            
+            return candidate
+            
+    except Exception as e:
+        logger.error(
+            "Resume upload failed",
+            client_id=str(current_client.id),
+            filename=file.filename,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process resume: {str(e)}"
+        )
+    finally:
+        # Cleanup temp file
+        if temp_file_path and temp_file_path.exists() and not keep_uploaded_file:
+            try:
+                os.remove(temp_file_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temp file {temp_file_path}: {e}")
+
+
+
 @router.get("/", response_model=List[CandidateResponse])
 async def list_candidates(
     name_pattern: Optional[str] = Query(None, description="Search by name pattern"),
     skills: Optional[str] = Query(None, description="Search by skills (comma-separated)"),
-    city: Optional[str] = Query(None, description="Search by location/city"),
+    location: Optional[str] = Query(None, description="Search by location/city"),
+    city: Optional[str] = Query(None, description="Deprecated: use location"),
+    min_experience: Optional[int] = Query(None, description="Filter by minimum years of experience"),
     max_experience: Optional[int] = Query(None, description="Filter by maximum years of experience"),
+    min_ctc_current: Optional[float] = Query(None, description="Filter by minimum current CTC"),
+    max_ctc_current: Optional[float] = Query(None, description="Filter by maximum current CTC"),
+    min_ctc_expected: Optional[float] = Query(None, description="Filter by minimum expected CTC"),
+    max_ctc_expected: Optional[float] = Query(None, description="Filter by maximum expected CTC"),
     candidate_status: Optional[str] = Query(None, description="Filter by candidate status"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records"),
@@ -126,8 +257,13 @@ async def list_candidates(
                 client_id=current_client.id,
                 name_pattern=name_pattern,
                 skills=skills_list,
-                location=city,
+                location=location or city,
+                min_experience=min_experience,
                 max_experience=max_experience,
+                min_ctc_current=min_ctc_current,
+                max_ctc_current=max_ctc_current,
+                min_ctc_expected=min_ctc_expected,
+                max_ctc_expected=max_ctc_expected,
                 status=candidate_status,
                 skip=skip,
                 limit=limit
@@ -141,8 +277,13 @@ async def list_candidates(
                 filters={
                     "name_pattern": name_pattern,
                     "skills": skills,
-                    "city": city,
+                    "location": location or city,
+                    "min_experience": min_experience,
                     "max_experience": max_experience,
+                    "min_ctc_current": min_ctc_current,
+                    "max_ctc_current": max_ctc_current,
+                    "min_ctc_expected": min_ctc_expected,
+                    "max_ctc_expected": max_ctc_expected,
                     "status": candidate_status
                 }
             )

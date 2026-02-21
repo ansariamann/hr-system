@@ -41,7 +41,7 @@ class BaseRepository(Generic[ModelType]):
         try:
             instance = self.model(**kwargs)
             db.add(instance)
-            db.commit()
+            db.flush()  # Flush to get ID without committing
             db.refresh(instance)
             
             logger.info(
@@ -127,7 +127,7 @@ class BaseRepository(Generic[ModelType]):
                 if hasattr(instance, field) and value is not None:
                     setattr(instance, field, value)
             
-            db.commit()
+            db.flush()  # Flush changes without committing
             db.refresh(instance)
             
             logger.info(
@@ -171,7 +171,7 @@ class BaseRepository(Generic[ModelType]):
         
         try:
             db.delete(instance)
-            db.commit()
+            db.flush()  # Flush deletion without committing
             
             logger.info(
                 "Record deleted",

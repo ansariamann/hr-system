@@ -75,6 +75,7 @@ class ParsedResume(BaseModel):
     salary_info: Optional[SalaryInfo] = Field(None)
     
     # Raw extracted text
+    summary: Optional[str] = Field(None, description="Resume summary")
     raw_text: str = Field(default="", description="Complete extracted text")
     
     # Parsing metadata

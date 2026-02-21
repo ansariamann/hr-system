@@ -87,7 +87,7 @@ class AuditLogger:
         )
         
         db.add(audit_log)
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Audit log created for CREATE",
@@ -151,7 +151,7 @@ class AuditLogger:
         )
         
         db.add(audit_log)
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Audit log created for UPDATE",
@@ -202,7 +202,7 @@ class AuditLogger:
         )
         
         db.add(audit_log)
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Audit log created for DELETE",
@@ -252,7 +252,7 @@ class AuditLogger:
         )
         
         db.add(audit_log)
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Audit log created for SOFT_DELETE",
@@ -302,7 +302,7 @@ class AuditLogger:
         )
         
         db.add(audit_log)
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Audit log created for RESTORE",

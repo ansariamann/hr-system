@@ -1,6 +1,7 @@
 """FastAPI application with comprehensive error handling and startup validation."""
 
 from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -12,8 +13,20 @@ import time
 import asyncio
 import signal
 import sys
+from pathlib import Path
 
 from ats_backend.core.config import settings
+
+# Monkey-patch bcrypt for passlib compatibility (bcrypt >= 4.0.0)
+try:
+    import bcrypt
+    if not hasattr(bcrypt, '__about__'):
+        class About:
+            __version__ = bcrypt.__version__
+        bcrypt.__about__ = About()
+except ImportError:
+    pass
+
 from ats_backend.core.database import get_db
 from ats_backend.core.logging import configure_logging, system_logger, performance_logger, error_logger
 from ats_backend.core.metrics import metrics_middleware
@@ -37,6 +50,7 @@ from ats_backend.api.applications import router as applications_router
 from ats_backend.api.security import router as security_router
 from ats_backend.api.sse import router as sse_router
 from ats_backend.api.observability import router as observability_router
+from ats_backend.api.clients import router as clients_router
 
 # Configure logging
 configure_logging()
@@ -200,13 +214,25 @@ class LoggingMiddleware(BaseHTTPMiddleware):
 
 
 # Global shutdown flag
-shutdown_event = asyncio.Event()
+_shutdown_event = None
+
+
+def get_shutdown_event():
+    """Get or create shutdown event."""
+    global _shutdown_event
+    if _shutdown_event is None:
+        _shutdown_event = asyncio.Event()
+    return _shutdown_event
 
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully."""
     logger.info(f"Received signal {signum}, initiating graceful shutdown")
-    shutdown_event.set()
+    try:
+        event = get_shutdown_event()
+        event.set()
+    except Exception as e:
+        logger.error(f"Error in signal handler: {e}")
 
 
 # Register signal handlers
@@ -241,11 +267,13 @@ ALLOWED_ORIGINS = [
     "http://localhost:5174",
     "http://localhost:5175",
     "http://localhost:8080",
+    "http://localhost:8081",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
     "http://127.0.0.1:5175",
     "http://127.0.0.1:8080",
+    "http://127.0.0.1:8081",
     "http://127.0.0.1:3000",
 ]
 
@@ -258,6 +286,10 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# Serve uploaded files (resumes) for dashboard preview/download.
+Path("uploads").mkdir(exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/health")
 def health_check():
@@ -272,6 +304,7 @@ app.include_router(monitoring_router)
 app.include_router(security_router)
 app.include_router(sse_router)
 app.include_router(observability_router)
+app.include_router(clients_router)
 
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")
@@ -514,7 +547,7 @@ async def run_with_graceful_shutdown():
     server_task = asyncio.create_task(server.serve())
     
     # Wait for shutdown signal
-    await shutdown_event.wait()
+    await get_shutdown_event().wait()
     
     # Graceful shutdown
     logger.info("Initiating graceful shutdown")

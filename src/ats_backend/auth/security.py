@@ -282,7 +282,7 @@ class SecurityLogger:
             )
             
             db.add(audit_log)
-            db.commit()
+            db.flush()  # Flush without committing - let caller control transaction
             db.refresh(audit_log)
             
             logger.warning(
@@ -343,7 +343,7 @@ class SecurityLogger:
                 )
                 
                 db.add(audit_log)
-                db.commit()
+                db.flush()  # Flush without committing - let caller control transaction
                 
                 logger.warning(
                     "Security event logged",

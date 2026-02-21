@@ -80,15 +80,25 @@ class AbuseProtectionConfig:
 
 class RateLimiter:
     """Redis-based rate limiter for abuse protection."""
-    
+
     def __init__(self, redis_client=None):
         """Initialize rate limiter.
-        
+
         Args:
             redis_client: Redis client instance (optional)
         """
-        self.redis = redis_client or get_redis()
+        self._redis_client = redis_client
         self.security_logger = SecurityLogger()
+        
+    @property
+    def redis(self):
+        """Get Redis client instance."""
+        if self._redis_client:
+            return self._redis_client
+            
+        # Access global redis manager client directly
+        from ats_backend.core.redis import redis_manager
+        return redis_manager.client
     
     async def check_rate_limit(
         self, 

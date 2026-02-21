@@ -132,7 +132,7 @@ class ResumeJobRepository(AuditedRepository[ResumeJob]):
             return False
         
         job.status = "PROCESSING"
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info("Resume job marked as processing", job_id=str(job_id))
         return True
@@ -153,7 +153,7 @@ class ResumeJobRepository(AuditedRepository[ResumeJob]):
             return False
         
         job.mark_processed()
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info("Resume job marked as completed", job_id=str(job_id))
         return True
@@ -175,7 +175,7 @@ class ResumeJobRepository(AuditedRepository[ResumeJob]):
             return False
         
         job.mark_failed(error_message)
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info(
             "Resume job marked as failed",
@@ -206,7 +206,7 @@ class ResumeJobRepository(AuditedRepository[ResumeJob]):
         job.status = "PENDING"
         job.error_message = None
         job.processed_at = None
-        db.commit()
+        db.flush()  # Flush without committing - let caller control transaction
         
         logger.info("Resume job reset for retry", job_id=str(job_id))
         return True

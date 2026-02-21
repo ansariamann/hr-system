@@ -22,6 +22,7 @@ class Candidate(Base):
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
     location = Column(String(255), nullable=True)
+    resume_file_path = Column(Text, nullable=True)
     skills = Column(JSON, nullable=True)
     experience = Column(JSON, nullable=True)
     ctc_current = Column(DECIMAL(12, 2), nullable=True)
