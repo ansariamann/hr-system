@@ -409,6 +409,17 @@ class SSEManager:
                 json.dumps(event_data)
             )
             
+            # Also store in ZSET for efficient range queries
+            zset_key = f"events_zset:{event.tenant_id}"
+            cutoff_time = time.time() - self.event_retention_time
+
+            # Use pipeline for better performance
+            async with self.redis_client.pipeline() as pipe:
+                await pipe.zadd(zset_key, {event.event_id: event.timestamp})
+                await pipe.zremrangebyscore(zset_key, 0, cutoff_time)
+                await pipe.expire(zset_key, self.event_retention_time)
+                await pipe.execute()
+
             # Also store in local cache for immediate access
             self.event_store[event.event_id] = event
             
@@ -485,40 +496,49 @@ class SSEManager:
                 last_timestamp = int(parts[1]) / 1000  # Convert back to seconds
                 last_sequence = int(parts[2])
                 
-                # Find events after the last event
-                # This is a simplified implementation - in production, you might want
-                # to use Redis sorted sets for more efficient range queries
-                pattern = f"event:{tenant_id}_*"
-                keys = await self.redis_client.keys(pattern)
+                # Find events after the last event using ZSET for efficient range queries
+                zset_key = f"events_zset:{tenant_id}"
+
+                # Use zrangebyscore to find relevant event IDs efficiently
+                # We start looking from the last timestamp
+                event_ids = await self.redis_client.zrangebyscore(
+                    zset_key,
+                    min=last_timestamp,
+                    max="+inf"
+                )
                 
-                for key in keys:
-                    try:
-                        event_data = await self.redis_client.get(key)
+                if event_ids:
+                    # Batch retrieval using MGET to avoid N+1 problem
+                    event_keys = [f"event:{eid}" for eid in event_ids]
+                    events_data = await self.redis_client.mget(event_keys)
+
+                    for i, event_data in enumerate(events_data):
                         if event_data:
-                            event_info = json.loads(event_data)
-                            event_timestamp = event_info.get("timestamp", 0)
-                            event_sequence = event_info.get("sequence", 0)
-                            
-                            # Check if this event is after the last received event
-                            if (event_timestamp > last_timestamp or 
-                                (event_timestamp == last_timestamp and event_sequence > last_sequence)):
+                            try:
+                                event_info = json.loads(event_data)
+                                event_timestamp = event_info.get("timestamp", 0)
+                                event_sequence = event_info.get("sequence", 0)
                                 
-                                event = SSEEvent(
-                                    event_type=event_info["event_type"],
-                                    data=event_info["data"],
-                                    tenant_id=UUID(event_info["tenant_id"]),
-                                    application_id=UUID(event_info["application_id"]) if event_info.get("application_id") else None,
-                                    sequence=event_sequence,
-                                    event_id=key.replace("event:", "")
+                                # Check if this event is after the last received event
+                                if (event_timestamp > last_timestamp or
+                                    (event_timestamp == last_timestamp and event_sequence > last_sequence)):
+
+                                    event = SSEEvent(
+                                        event_type=event_info["event_type"],
+                                        data=event_info["data"],
+                                        tenant_id=UUID(event_info["tenant_id"]),
+                                        application_id=UUID(event_info["application_id"]) if event_info.get("application_id") else None,
+                                        sequence=event_sequence,
+                                        event_id=event_ids[i]
+                                    )
+                                    missed_events.append(event)
+
+                            except (json.JSONDecodeError, ValueError) as e:
+                                logger.warning(
+                                    "Failed to parse stored event",
+                                    key=event_keys[i],
+                                    error=str(e)
                                 )
-                                missed_events.append(event)
-                                
-                    except (json.JSONDecodeError, ValueError) as e:
-                        logger.warning(
-                            "Failed to parse stored event",
-                            key=key,
-                            error=str(e)
-                        )
                 
                 # Sort by timestamp and sequence
                 missed_events.sort(key=lambda e: (e.timestamp, e.sequence))
