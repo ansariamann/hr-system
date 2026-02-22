@@ -1,6 +1,6 @@
 """Candidate repository for database operations."""
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Iterator
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -348,3 +348,36 @@ class CandidateRepository(AuditedRepository[Candidate]):
         
         logger.info("Candidate hash updated", candidate_id=str(candidate_id))
         return True
+
+    def get_candidates_for_client_iterator(
+        self,
+        db: Session,
+        client_id: UUID,
+        batch_size: int = 1000
+    ) -> Iterator[List[Candidate]]:
+        """Yield candidates for a client in batches using keyset pagination.
+
+        Args:
+            db: Database session
+            client_id: Client UUID
+            batch_size: Number of records per batch
+
+        Yields:
+            List of Candidate objects
+        """
+        last_id = None
+
+        while True:
+            query = db.query(Candidate).filter(Candidate.client_id == client_id)
+
+            if last_id:
+                query = query.filter(Candidate.id > last_id)
+
+            batch = query.order_by(Candidate.id).limit(batch_size).all()
+
+            if not batch:
+                break
+
+            yield batch
+
+            last_id = batch[-1].id
