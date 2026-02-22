@@ -74,6 +74,24 @@ class CandidateRepository(AuditedRepository[Candidate]):
             )
         ).first()
     
+    def count_with_hash(self, db: Session, client_id: UUID) -> int:
+        """Count candidates with a valid hash within client context.
+
+        Args:
+            db: Database session
+            client_id: Client UUID
+
+        Returns:
+            Number of candidates with a valid hash
+        """
+        return db.query(Candidate).filter(
+            and_(
+                Candidate.client_id == client_id,
+                Candidate.candidate_hash.isnot(None),
+                Candidate.candidate_hash != ""
+            )
+        ).count()
+
     def search(
         self, 
         db: Session, 

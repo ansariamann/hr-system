@@ -117,6 +117,28 @@ class ApplicationRepository(AuditedRepository[Application]):
             .all()
         )
     
+    def count_flagged_applications(self, db: Session, client_id: UUID) -> int:
+        """Count flagged applications within client context.
+
+        Args:
+            db: Database session
+            client_id: Client UUID
+
+        Returns:
+            Number of flagged applications
+        """
+        return (
+            db.query(Application)
+            .filter(
+                and_(
+                    Application.client_id == client_id,
+                    Application.flagged_for_review == True,
+                    Application.deleted_at.is_(None)
+                )
+            )
+            .count()
+        )
+
     def soft_delete(self, db: Session, application_id: UUID) -> bool:
         """Soft delete an application by setting deleted_at timestamp.
         
