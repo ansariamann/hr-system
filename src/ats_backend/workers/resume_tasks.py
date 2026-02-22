@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, Optional
 from uuid import UUID
-from celery import Task
+from celery import Task, group
 import structlog
 from pathlib import Path
 
@@ -317,7 +317,7 @@ def batch_process_resumes(
         user_id: User UUID string (optional)
         
     Returns:
-        Dictionary with batch processing results
+        Dictionary with batch processing launch info
     """
     try:
         logger.info(
@@ -327,62 +327,29 @@ def batch_process_resumes(
             job_count=len(job_ids)
         )
         
-        results = []
-        successful_count = 0
-        failed_count = 0
+        # Create task group for parallel execution
+        resume_tasks = [
+            process_resume_file.s(client_id, job_id, user_id)
+            for job_id in job_ids
+        ]
         
-        for job_id in job_ids:
-            try:
-                # Process each resume individually
-                result = process_resume_file.apply(
-                    args=[client_id, job_id, user_id]
-                )
-                
-                if result.successful():
-                    task_result = result.get()
-                    if task_result.get("success", False):
-                        successful_count += 1
-                    else:
-                        failed_count += 1
-                    results.append(task_result)
-                else:
-                    failed_count += 1
-                    results.append({
-                        "success": False,
-                        "job_id": job_id,
-                        "message": "Task execution failed"
-                    })
-                    
-            except Exception as e:
-                failed_count += 1
-                results.append({
-                    "success": False,
-                    "job_id": job_id,
-                    "message": f"Processing failed: {str(e)}"
-                })
-                
-                logger.error(
-                    "Individual resume processing failed in batch",
-                    job_id=job_id,
-                    error=str(e)
-                )
+        # Create and dispatch the group asynchronously
+        job_group = group(resume_tasks)
+        result = job_group.apply_async()
         
         logger.info(
-            "Batch resume processing task completed",
+            "Batch resume processing tasks dispatched",
             task_id=self.request.id,
             client_id=client_id,
-            total_jobs=len(job_ids),
-            successful=successful_count,
-            failed=failed_count
+            group_id=result.id,
+            job_count=len(job_ids)
         )
         
         return {
             "success": True,
-            "message": f"Batch processing completed: {successful_count} successful, {failed_count} failed",
+            "message": f"Batch processing started for {len(job_ids)} jobs",
             "total_jobs": len(job_ids),
-            "successful_count": successful_count,
-            "failed_count": failed_count,
-            "results": results,
+            "group_id": result.id,
             "task_id": self.request.id
         }
         
