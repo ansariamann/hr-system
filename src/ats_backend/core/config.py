@@ -54,12 +54,17 @@ class Settings(BaseSettings):
         default=[".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif"],
         description="Supported resume file extensions"
     )
+
+    # Alert Email Configuration
+    alerts_email_enabled: bool = Field(default=False, description="Enable email alerts")
+    alerts_email_recipients: List[str] = Field(default=[], description="List of email recipients for alerts")
+    alerts_email_from: str = Field(default="alerts@example.com", description="Sender email for alerts")
     
     # Storage Configuration
     storage_path: str = Field(default="./storage", description="Path for file storage")
     backup_path: str = Field(default="./backups", description="Path for database backups")
     
-    # SMTP Configuration (for testing)
+    # SMTP Configuration
     smtp_host: str = Field(default="localhost", description="SMTP server host")
     smtp_port: int = Field(default=587, description="SMTP server port")
     smtp_username: Optional[str] = Field(default=None, description="SMTP username")
