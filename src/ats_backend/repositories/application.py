@@ -1,11 +1,11 @@
 """Application repository for database operations."""
 
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_
+from sqlalchemy import and_, func, case
 import structlog
 
 from ats_backend.models.application import Application
@@ -377,3 +377,60 @@ class ApplicationRepository(AuditedRepository[Application]):
             )
             .count()
         )
+
+    def get_statistics(
+        self,
+        db: Session,
+        client_id: UUID
+    ) -> Dict[str, Any]:
+        """Get application statistics for a client using efficient aggregation.
+
+        Args:
+            db: Database session
+            client_id: Client UUID
+
+        Returns:
+            Dictionary with application statistics
+        """
+        # 1. Get counts for total, active, deleted, flagged
+        counts = db.query(
+            func.count(Application.id).label("total"),
+            func.count(case((Application.deleted_at.is_(None), 1))).label("active"),
+            func.count(case((Application.deleted_at.isnot(None), 1))).label("deleted"),
+            func.count(case((and_(Application.flagged_for_review == True, Application.deleted_at.is_(None)), 1))).label("flagged")
+        ).filter(
+            Application.client_id == client_id
+        ).first()
+
+        stats = {
+            "total_applications": counts.total or 0,
+            "active_applications": counts.active or 0,
+            "deleted_applications": counts.deleted or 0,
+            "flagged_applications": counts.flagged or 0,
+        }
+
+        # 2. Get counts by status (only for active applications)
+        status_counts = db.query(
+            Application.status,
+            func.count(Application.id)
+        ).filter(
+            and_(
+                Application.client_id == client_id,
+                Application.deleted_at.is_(None)
+            )
+        ).group_by(
+            Application.status
+        ).all()
+
+        status_map = {status: count for status, count in status_counts}
+
+        # Populate the specific statuses required by the service
+        required_statuses = [
+            "RECEIVED", "SCREENING", "INTERVIEW_SCHEDULED", "INTERVIEWED",
+            "OFFER_MADE", "HIRED", "REJECTED", "WITHDRAWN"
+        ]
+
+        for status in required_statuses:
+            stats[status.lower()] = status_map.get(status, 0)
+
+        return stats
