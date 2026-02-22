@@ -1,6 +1,6 @@
 """FastAPI dependencies for authentication and authorization."""
 
-from typing import Optional
+from typing import Optional, Iterable
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -172,3 +172,47 @@ def require_client_access(required_client_id: UUID):
         return current_user
     
     return check_client_access
+
+
+def require_roles(required_roles: Iterable[str], require_all: bool = False):
+    """Dependency factory to require specific user roles.
+    
+    Args:
+        required_roles: Roles that are allowed
+        require_all: If True, user must have all roles (typically False)
+        
+    Returns:
+        Dependency function
+    """
+    required_set = {role.strip().lower() for role in required_roles}
+    
+    async def check_roles(
+        current_user: User = Depends(get_current_user)
+    ) -> User:
+        user_role = (current_user.role or "").strip().lower()
+        if not user_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User role is not set"
+            )
+        
+        if require_all:
+            allowed = required_set.issubset({user_role})
+        else:
+            allowed = user_role in required_set
+        
+        if not allowed:
+            logger.warning(
+                "Role access denied",
+                user_id=str(current_user.id),
+                role=user_role,
+                required_roles=list(required_set)
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient role permissions"
+            )
+        
+        return current_user
+    
+    return check_roles

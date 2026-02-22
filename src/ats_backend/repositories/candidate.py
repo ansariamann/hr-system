@@ -48,6 +48,7 @@ class CandidateRepository(AuditedRepository[Candidate]):
         min_ctc_expected: Optional[float] = None,
         max_ctc_expected: Optional[float] = None,
         status: Optional[str] = None,
+        assigned_user_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> List[Candidate]:
@@ -70,6 +71,8 @@ class CandidateRepository(AuditedRepository[Candidate]):
 
         if status:
             conditions.append(Candidate.status == status)
+        if assigned_user_id is not None:
+            conditions.append(Candidate.assigned_user_id == assigned_user_id)
 
         if skills:
             skill_conditions = [
@@ -101,6 +104,11 @@ class CandidateRepository(AuditedRepository[Candidate]):
             .limit(limit)
             .all()
         )
+
+    def get_by_id_for_client(self, db: Session, candidate_id: UUID, client_id: UUID) -> Optional[Candidate]:
+        return db.query(Candidate).filter(
+            and_(Candidate.id == candidate_id, Candidate.client_id == client_id)
+        ).first()
 
     def search_by_name(self, db: Session, client_id: UUID, name_pattern: str, limit: int = 10) -> List[Candidate]:
         return self.search(db, client_id, name_pattern=name_pattern, limit=limit)

@@ -99,6 +99,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             "/health",
             "/auth/login",
             "/auth/register",
+            "/auth/password/forgot",
+            "/auth/password/reset",
         ]
         
         return any(path.startswith(skip_path) for skip_path in skip_paths)

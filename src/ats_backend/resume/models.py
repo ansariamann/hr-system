@@ -1,6 +1,6 @@
 """Pydantic models for resume parsing results."""
 
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, EmailStr, validator
@@ -73,6 +73,11 @@ class ParsedResume(BaseModel):
     education: List[Education] = Field(default_factory=list)
     skills: List[Skill] = Field(default_factory=list)
     salary_info: Optional[SalaryInfo] = Field(None)
+    date_of_birth: Optional[date] = Field(None, description="Candidate date of birth")
+    present_address: Optional[str] = Field(None, description="Current/present address")
+    permanent_address: Optional[str] = Field(None, description="Permanent address")
+    previous_employment: List[Dict[str, Any]] = Field(default_factory=list, description="Previous employment entries")
+    key_skill: Optional[str] = Field(None, description="Key skill summary")
     
     # Raw extracted text
     summary: Optional[str] = Field(None, description="Resume summary")
@@ -144,6 +149,12 @@ class ParsedResume(BaseModel):
             "name": self.contact_info.name,
             "email": self.contact_info.email,
             "phone": self.contact_info.phone,
+            "location": self.contact_info.location,
+            "present_address": self.present_address,
+            "permanent_address": self.permanent_address,
+            "date_of_birth": self.date_of_birth,
+            "previous_employment": self.previous_employment,
+            "key_skill": self.key_skill,
             "skills": skills_data,
             "experience": experience_data,
             "ctc_current": self.salary_info.current_ctc if self.salary_info else None,

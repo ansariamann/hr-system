@@ -1,7 +1,7 @@
 """Candidate management API endpoints."""
 
 from typing import List, Optional, Dict, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import shutil
 from pathlib import Path
@@ -29,6 +29,24 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
+CLIENT_SCOPED_ROLES = {"client_user", "client_admin"}
+
+
+def _is_client_scoped_user(user: User) -> bool:
+    return (user.role or "").lower() in CLIENT_SCOPED_ROLES
+
+
+def _normalize_resume_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
+    resume_url = payload.get("resume_url")
+    resume_file_path = payload.get("resume_file_path")
+
+    if resume_url and not resume_file_path:
+        payload["resume_file_path"] = resume_url
+    if resume_file_path and not resume_url:
+        payload["resume_url"] = resume_file_path
+
+    return payload
+
 
 @router.post("/", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
 async def create_candidate(
@@ -49,6 +67,11 @@ async def create_candidate(
             user_id=str(current_user.id),
             client_id=str(current_client.id)
         ):
+            candidate_payload = _normalize_resume_fields(candidate_data.dict())
+            if _is_client_scoped_user(current_user) and not candidate_payload.get("assigned_user_id"):
+                candidate_payload["assigned_user_id"] = current_user.id
+            candidate_data = CandidateCreate(**candidate_payload)
+
             # Get request metadata
             ip_address = request.client.host if request.client else None
             user_agent = request.headers.get("user-agent")
@@ -124,10 +147,7 @@ async def upload_resume(
             
             # Save file temporarily
             file_ext = Path(file.filename).suffix
-            temp_file_name = f"upload_{current_client.id}_{UUID(int=0)}_{file.filename}" # Placeholder UUID to avoid extra import if not needed
-            # Better unique name
-            import uuid
-            temp_file_name = f"upload_{uuid.uuid4()}{file_ext}"
+            temp_file_name = f"upload_{uuid4()}{file_ext}"
             temp_file_path = upload_dir / temp_file_name
             
             with open(temp_file_path, "wb") as buffer:
@@ -159,7 +179,14 @@ async def upload_resume(
                 email=candidate_data_dict.get("email"),
                 phone=candidate_data_dict.get("phone"),
                 location=candidate_data_dict.get("location"),
+                present_address=candidate_data_dict.get("present_address"),
+                permanent_address=candidate_data_dict.get("permanent_address"),
+                date_of_birth=candidate_data_dict.get("date_of_birth"),
+                previous_employment=candidate_data_dict.get("previous_employment"),
+                key_skill=candidate_data_dict.get("key_skill"),
                 resume_file_path=f"/uploads/{temp_file_name}",
+                resume_url=f"/uploads/{temp_file_name}",
+                assigned_user_id=current_user.id if _is_client_scoped_user(current_user) else None,
                 skills=candidate_data_dict.get("skills"),
                 experience=candidate_data_dict.get("experience"),
                 ctc_current=candidate_data_dict.get("ctc_current"),
@@ -265,6 +292,7 @@ async def list_candidates(
                 min_ctc_expected=min_ctc_expected,
                 max_ctc_expected=max_ctc_expected,
                 status=candidate_status,
+                assigned_user_id=current_user.id if _is_client_scoped_user(current_user) else None,
                 skip=skip,
                 limit=limit
             )
@@ -323,16 +351,17 @@ async def get_candidate(
             candidate_id=str(candidate_id)
         ):
             candidate_service = CandidateService()
-            candidate = candidate_service.get_candidate_by_id(db, candidate_id)
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
             
             if not candidate:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Candidate not found"
                 )
-            
-            # Verify candidate belongs to current client
-            if candidate.client_id != current_client.id:
+
+            if _is_client_scoped_user(current_user) and candidate.assigned_user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Candidate not found"
@@ -389,6 +418,27 @@ async def update_candidate(
             user_agent = request.headers.get("user-agent")
             
             candidate_service = CandidateService()
+            existing_candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not existing_candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            if _is_client_scoped_user(current_user) and existing_candidate.assigned_user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not allowed to modify candidates not assigned to you"
+                )
+
+            candidate_payload = _normalize_resume_fields(candidate_data.dict(exclude_unset=True))
+            if _is_client_scoped_user(current_user):
+                # Client users cannot reassign candidates.
+                candidate_payload.pop("assigned_user_id", None)
+            candidate_data = CandidateUpdate(**candidate_payload)
+
             candidate = candidate_service.update_candidate(
                 db=db,
                 candidate_id=candidate_id,
@@ -467,6 +517,21 @@ async def delete_candidate(
             user_agent = request.headers.get("user-agent")
             
             candidate_service = CandidateService()
+            existing_candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not existing_candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            if _is_client_scoped_user(current_user) and existing_candidate.assigned_user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not allowed to modify candidates not assigned to you"
+                )
+
             deleted = candidate_service.delete_candidate(
                 db=db,
                 candidate_id=candidate_id,
@@ -539,15 +604,16 @@ async def find_candidate_duplicates(
             candidate_service = CandidateService()
             
             # First get the candidate to use for duplicate detection
-            candidate = candidate_service.get_candidate_by_id(db, candidate_id)
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
             if not candidate:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Candidate not found"
                 )
-            
-            # Verify candidate belongs to current client
-            if candidate.client_id != current_client.id:
+
+            if _is_client_scoped_user(current_user) and candidate.assigned_user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Candidate not found"
@@ -616,6 +682,12 @@ async def get_candidate_by_email(
             )
             
             if not candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            if _is_client_scoped_user(current_user) and candidate.assigned_user_id != current_user.id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Candidate not found"

@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
-import os
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -15,6 +14,21 @@ from .models import User, TokenData
 
 logger = structlog.get_logger(__name__)
 
+ALLOWED_ROLES = {"hr_admin", "hr_user", "client_admin", "client_user"}
+DEFAULT_ROLE = "client_user"
+
+
+def normalize_role(role: Optional[str]) -> str:
+    """Normalize and validate a role string."""
+    if role is None:
+        return DEFAULT_ROLE
+    
+    normalized = role.strip().lower()
+    if normalized not in ALLOWED_ROLES:
+        raise ValueError(f"Invalid role: {role}")
+    return normalized
+
+
 def get_pwd_context():
     """Get password context based on environment."""
     return CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
@@ -22,7 +36,8 @@ def get_pwd_context():
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
-    logger.debug("Verifying password", extra={"plain_password": plain_password, "hashed_password": hashed_password})
+    # Never log plain or hashed passwords
+    logger.debug("Verifying password")
     
     # Try using bcrypt directly first, as passlib has issues with newer bcrypt versions
     try:
@@ -101,6 +116,7 @@ async def verify_token(token: str, db: Optional[Session] = None) -> Optional[Tok
         user_id_str: str = payload.get("sub")
         client_id_str: str = payload.get("client_id")
         email: str = payload.get("email")
+        role: str = payload.get("role")
         jti: str = payload.get("jti")
         
         if user_id_str is None:
@@ -129,7 +145,8 @@ async def verify_token(token: str, db: Optional[Session] = None) -> Optional[Tok
         token_data = TokenData(
             user_id=user_id,
             client_id=client_id,
-            email=email
+            email=email,
+            role=role
         )
         
         logger.debug("Token verified successfully", user_id=str(user_id))
@@ -156,7 +173,7 @@ def authenticate_user(
     user = db.query(User).filter(User.email == email).first()
     
     if user:
-        logger.debug("User found in DB", extra={"email": email, "hashed_password": user.hashed_password})
+        logger.debug("User found in DB", extra={"email": email})
     
     print(f"DEBUG: authenticate_user called for {email}")
     if not user:
@@ -188,13 +205,15 @@ def get_user_by_email(db: Session, email: str) -> Optional[User]:
 
 def create_user(db: Session, user_create: dict) -> User:
     hashed_password = get_password_hash(user_create["password"])
+    role = normalize_role(user_create.get("role"))
     
     db_user = User(
         email=user_create["email"],
         hashed_password=hashed_password,
         full_name=user_create.get("full_name"),
         client_id=user_create["client_id"],
-        is_active=user_create.get("is_active", True)
+        is_active=user_create.get("is_active", True),
+        role=role
     )
     
     db.add(db_user)

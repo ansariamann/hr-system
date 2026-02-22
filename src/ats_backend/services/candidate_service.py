@@ -85,6 +85,15 @@ class CandidateService:
             Candidate if found, None otherwise
         """
         return self.repository.get_by_id(db, candidate_id)
+
+    def get_candidate_by_id_for_client(
+        self,
+        db: Session,
+        candidate_id: UUID,
+        client_id: UUID
+    ) -> Optional[Candidate]:
+        """Get candidate by ID scoped to a client."""
+        return self.repository.get_by_id_for_client(db, candidate_id, client_id)
     
     def get_candidate_by_email(
         self, 
@@ -118,6 +127,7 @@ class CandidateService:
         min_ctc_expected: Optional[float] = None,
         max_ctc_expected: Optional[float] = None,
         status: Optional[str] = None,
+        assigned_user_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[Candidate]:
@@ -150,6 +160,7 @@ class CandidateService:
             min_ctc_expected=min_ctc_expected,
             max_ctc_expected=max_ctc_expected,
             status=status,
+            assigned_user_id=assigned_user_id,
             skip=skip,
             limit=limit
         )
@@ -179,6 +190,11 @@ class CandidateService:
             Updated candidate if found, None otherwise
         """
         try:
+            # Scope the update to the candidate's client first.
+            candidate = self.repository.get_by_id_for_client(db, candidate_id, client_id)
+            if not candidate:
+                return None
+
             # Only update fields that are provided
             update_data = candidate_data.dict(exclude_unset=True)
             
@@ -233,6 +249,10 @@ class CandidateService:
             True if deleted, False if not found
         """
         try:
+            candidate = self.repository.get_by_id_for_client(db, candidate_id, client_id)
+            if not candidate:
+                return False
+
             deleted = self.repository.delete_with_audit(
                 db=db,
                 id=candidate_id,

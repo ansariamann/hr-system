@@ -51,6 +51,8 @@ from ats_backend.api.security import router as security_router
 from ats_backend.api.sse import router as sse_router
 from ats_backend.api.observability import router as observability_router
 from ats_backend.api.clients import router as clients_router
+from ats_backend.api.auth import router as auth_router
+from ats_backend.api.jobs import router as jobs_router
 
 # Configure logging
 configure_logging()
@@ -305,6 +307,8 @@ app.include_router(security_router)
 app.include_router(sse_router)
 app.include_router(observability_router)
 app.include_router(clients_router)
+app.include_router(auth_router)
+app.include_router(jobs_router)
 
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")
@@ -314,7 +318,7 @@ def login(
     db: Session = Depends(get_db)
 ):
     """Authenticate user and return access token with comprehensive error handling and security features."""
-    print(f"DEBUG: Login Request for {form_data.username} / {form_data.password}")
+    print(f"DEBUG: Login Request for {form_data.username}")
     from ats_backend.auth.utils import authenticate_user
     
     context = ErrorContext(
@@ -353,7 +357,8 @@ def login(
                 data={
                     "sub": str(user.id),
                     "client_id": str(user.client_id),
-                    "email": user.email
+                    "email": user.email,
+                    "role": user.role
                 },
                 expires_delta=access_token_expires
             )

@@ -1,11 +1,11 @@
 """Pydantic schemas for Candidate model."""
 
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 
-from pydantic import BaseModel, Field, EmailStr, validator
+from pydantic import BaseModel, Field, EmailStr, validator, root_validator
 
 
 class CandidateBase(BaseModel):
@@ -15,7 +15,14 @@ class CandidateBase(BaseModel):
     email: Optional[EmailStr] = Field(None, description="Candidate email address")
     phone: Optional[str] = Field(None, max_length=50, description="Candidate phone number")
     location: Optional[str] = Field(None, max_length=255, description="Candidate location/city")
+    present_address: Optional[str] = Field(None, description="Current/present address")
+    permanent_address: Optional[str] = Field(None, description="Permanent address")
+    date_of_birth: Optional[date] = Field(None, description="Date of birth")
+    previous_employment: Optional[List[Dict[str, Any]]] = Field(None, description="Previous employment history")
+    key_skill: Optional[str] = Field(None, description="Key skill summary")
     resume_file_path: Optional[str] = Field(None, description="Path/URL for uploaded resume file")
+    resume_url: Optional[str] = Field(None, description="Canonical resume URL/path")
+    assigned_user_id: Optional[UUID] = Field(None, description="User assigned to this candidate")
     skills: Optional[Dict[str, Any]] = Field(None, description="Candidate skills in JSONB format")
     experience: Optional[Dict[str, Any]] = Field(None, description="Candidate experience in JSONB format")
     ctc_current: Optional[Decimal] = Field(None, ge=0, description="Current CTC in decimal format")
@@ -60,6 +67,19 @@ class CandidateBase(BaseModel):
                 raise ValueError('Experience must be a dictionary')
         return v
 
+    @root_validator(pre=True)
+    def normalize_resume_fields(cls, values):
+        """Keep legacy and canonical resume fields in sync."""
+        if not isinstance(values, dict):
+            return values
+        resume_url = values.get("resume_url")
+        resume_file_path = values.get("resume_file_path")
+        if resume_url and not resume_file_path:
+            values["resume_file_path"] = resume_url
+        if resume_file_path and not resume_url:
+            values["resume_url"] = resume_file_path
+        return values
+
 
 class CandidateCreate(CandidateBase):
     """Schema for creating a new candidate."""
@@ -73,7 +93,14 @@ class CandidateUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=50)
     location: Optional[str] = Field(None, max_length=255)
+    present_address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    date_of_birth: Optional[date] = None
+    previous_employment: Optional[List[Dict[str, Any]]] = None
+    key_skill: Optional[str] = None
     resume_file_path: Optional[str] = None
+    resume_url: Optional[str] = None
+    assigned_user_id: Optional[UUID] = None
     skills: Optional[Dict[str, Any]] = None
     experience: Optional[Dict[str, Any]] = None
     ctc_current: Optional[Decimal] = Field(None, ge=0)
@@ -117,12 +144,26 @@ class CandidateUpdate(BaseModel):
                 raise ValueError('Experience must be a dictionary')
         return v
 
+    @root_validator(pre=True)
+    def normalize_resume_fields(cls, values):
+        """Keep legacy and canonical resume fields in sync."""
+        if not isinstance(values, dict):
+            return values
+        resume_url = values.get("resume_url")
+        resume_file_path = values.get("resume_file_path")
+        if resume_url and not resume_file_path:
+            values["resume_file_path"] = resume_url
+        if resume_file_path and not resume_url:
+            values["resume_url"] = resume_file_path
+        return values
+
 
 class CandidateResponse(CandidateBase):
     """Schema for candidate response."""
     
     id: UUID
     client_id: UUID
+    assigned_user_id: Optional[UUID]
     candidate_hash: Optional[str]
     created_at: datetime
     updated_at: datetime

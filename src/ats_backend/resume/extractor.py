@@ -1,6 +1,8 @@
 """Data extraction utilities for resume parsing."""
 
 import re
+from datetime import datetime
+from decimal import Decimal
 from typing import Dict, Any, List
 import structlog
 
@@ -70,6 +72,20 @@ class DataExtractor:
             'soft_skills': ['leadership', 'communication', 'teamwork', 'problem solving', 'critical thinking', 'time management', 'adaptability', 'mentoring']
         }
         self._skill_patterns = self._build_skill_patterns()
+        self.dob_patterns = [
+            re.compile(r"\b(?:dob|date of birth)\s*[:\-]?\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b", re.IGNORECASE),
+            re.compile(r"\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})\b"),
+        ]
+        self.present_address_pattern = re.compile(r"\b(?:present|current)\s+address\s*[:\-]?\s*(.+)", re.IGNORECASE)
+        self.permanent_address_pattern = re.compile(r"\bpermanent\s+address\s*[:\-]?\s*(.+)", re.IGNORECASE)
+        self.ctc_patterns = {
+            "current": re.compile(r"\b(?:current|present)\s+ctc\s*[:\-]?\s*([0-9][0-9.,]*(?:\s*(?:lpa|lac|lakh|lakhs|cr|crore|crores))?)", re.IGNORECASE),
+            "expected": re.compile(r"\b(?:expected)\s+ctc\s*[:\-]?\s*([0-9][0-9.,]*(?:\s*(?:lpa|lac|lakh|lakhs|cr|crore|crores))?)", re.IGNORECASE),
+        }
+        self.employer_patterns = [
+            re.compile(r"\b(?:worked at|employed at|company)\s*[:\-]?\s*([A-Z][A-Za-z0-9&.,\-\s]{2,60})", re.IGNORECASE),
+            re.compile(r"\bat\s+([A-Z][A-Za-z0-9&.,\-\s]{2,60})", re.IGNORECASE),
+        ]
     
     def extract_data(self, text: str) -> Dict[str, Any]:
         """Extract all structured data from resume text."""
@@ -81,6 +97,13 @@ class DataExtractor:
         # Extract components
         contact_info = self._extract_contact_info(text)
         skills = self._extract_skills(cleaned_text)
+        salary_info = self._extract_salary_info(text)
+        date_of_birth = self._extract_date_of_birth(text)
+        present_address, permanent_address = self._extract_addresses(text)
+        previous_employment = self._extract_previous_employment(text)
+        key_skill = ", ".join([skill.name for skill in skills[:8]]) if skills else None
+        if present_address and not contact_info.location:
+            contact_info.location = present_address.split(",")[0].strip()
         
         # Extract education using the original text (preserving newlines)
         education = self._extract_education(text)
@@ -90,7 +113,12 @@ class DataExtractor:
             'experience': [],  # Simplified for now
             'education': education,
             'skills': skills,
-            'salary_info': None,  # Simplified for now
+            'salary_info': salary_info,
+            'date_of_birth': date_of_birth,
+            'present_address': present_address,
+            'permanent_address': permanent_address,
+            'previous_employment': previous_employment,
+            'key_skill': key_skill,
             'parsing_method': 'text_extraction',
             'confidence_score': self._calculate_confidence_score(contact_info, [], skills, education),
         }
@@ -306,6 +334,109 @@ class DataExtractor:
                 unique_skills.append(skill)
         
         return unique_skills
+
+    def _extract_date_of_birth(self, text: str):
+        for pattern in self.dob_patterns:
+            for match in pattern.findall(text):
+                raw = match if isinstance(match, str) else match[0]
+                normalized = raw.replace(".", "/").replace("-", "/")
+                for fmt in ("%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y", "%m/%d/%y"):
+                    try:
+                        parsed = datetime.strptime(normalized, fmt).date()
+                        if 1950 <= parsed.year <= datetime.utcnow().year - 14:
+                            return parsed
+                    except ValueError:
+                        continue
+        return None
+
+    def _extract_addresses(self, text: str):
+        present_address = None
+        permanent_address = None
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+
+        for line in lines:
+            if not present_address:
+                match = self.present_address_pattern.search(line)
+                if match:
+                    present_address = match.group(1).strip(" ,.-")
+            if not permanent_address:
+                match = self.permanent_address_pattern.search(line)
+                if match:
+                    permanent_address = match.group(1).strip(" ,.-")
+            if present_address and permanent_address:
+                break
+
+        if not present_address:
+            generic = next((ln for ln in lines if "address" in ln.lower() and "email" not in ln.lower()), None)
+            if generic:
+                parts = re.split(r"address\s*[:\-]?", generic, flags=re.IGNORECASE)
+                if len(parts) > 1 and parts[1].strip():
+                    present_address = parts[1].strip(" ,.-")
+
+        return present_address, permanent_address
+
+    def _extract_salary_info(self, text: str):
+        current_ctc = None
+        expected_ctc = None
+        raw_fragments = []
+
+        current_match = self.ctc_patterns["current"].search(text)
+        expected_match = self.ctc_patterns["expected"].search(text)
+
+        if current_match:
+            raw = current_match.group(1).strip()
+            raw_fragments.append(f"current={raw}")
+            current_ctc = self._normalize_ctc_value(raw)
+
+        if expected_match:
+            raw = expected_match.group(1).strip()
+            raw_fragments.append(f"expected={raw}")
+            expected_ctc = self._normalize_ctc_value(raw)
+
+        if current_ctc is None and expected_ctc is None:
+            return None
+
+        return SalaryInfo(
+            current_ctc=current_ctc,
+            expected_ctc=expected_ctc,
+            raw_text="; ".join(raw_fragments) if raw_fragments else None,
+        )
+
+    def _normalize_ctc_value(self, raw: str):
+        lower = raw.lower()
+        numeric_part = re.sub(r"[^0-9.]", "", raw)
+        if not numeric_part:
+            return None
+        try:
+            value = Decimal(numeric_part)
+        except Exception:
+            return None
+
+        if any(token in lower for token in ["cr", "crore"]):
+            value *= Decimal(10000000)
+        elif any(token in lower for token in ["lpa", "lac", "lakh"]):
+            value *= Decimal(100000)
+
+        return value
+
+    def _extract_previous_employment(self, text: str) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        seen = set()
+
+        for pattern in self.employer_patterns:
+            for match in pattern.findall(text):
+                company = match.strip(" ,.-")
+                if len(company) < 3:
+                    continue
+                lower = company.lower()
+                if lower in seen:
+                    continue
+                seen.add(lower)
+                entries.append({"company": company})
+                if len(entries) >= 10:
+                    return entries
+
+        return entries
     
     def _calculate_confidence_score(self, contact_info: ContactInfo, experience: List[Experience], skills: List[Skill], education: List[Education]) -> float:
         """Calculate confidence score based on extracted data quality."""

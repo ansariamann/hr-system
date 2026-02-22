@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, DECIMAL, Boolean, text, JSON, Text
+from sqlalchemy import Column, String, DateTime, Date, ForeignKey, DECIMAL, Boolean, text, JSON, Text
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
@@ -22,7 +22,14 @@ class Candidate(Base):
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
     location = Column(String(255), nullable=True)
+    present_address = Column(Text, nullable=True)
+    permanent_address = Column(Text, nullable=True)
+    date_of_birth = Column(Date, nullable=True)
+    previous_employment = Column(JSON, nullable=True)
+    key_skill = Column(Text, nullable=True)
     resume_file_path = Column(Text, nullable=True)
+    resume_url = Column(Text, nullable=True)
+    assigned_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
     skills = Column(JSON, nullable=True)
     experience = Column(JSON, nullable=True)
     ctc_current = Column(DECIMAL(12, 2), nullable=True)
@@ -37,6 +44,7 @@ class Candidate(Base):
     # Relationships
     client = relationship("Client", back_populates="candidates")
     applications = relationship("Application", back_populates="candidate", cascade="all, delete-orphan")
+    assigned_user = relationship("User", foreign_keys=[assigned_user_id])
     
     def __repr__(self) -> str:
         return f"<Candidate(id={self.id}, name='{self.name}', client_id={self.client_id})>"

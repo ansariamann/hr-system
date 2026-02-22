@@ -26,6 +26,7 @@ class Client(Base):
     applications = relationship("Application", back_populates="client", cascade="all, delete-orphan")
     resume_jobs = relationship("ResumeJob", back_populates="client", cascade="all, delete-orphan")
     users = relationship("User", back_populates="client", cascade="all, delete-orphan")
+    jobs = relationship("Job", back_populates="client", cascade="all, delete-orphan")
     
     def __repr__(self) -> str:
         return f"<Client(id={self.id}, name='{self.name}')>"
