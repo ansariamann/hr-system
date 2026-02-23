@@ -582,6 +582,143 @@ async def delete_candidate(
         )
 
 
+@router.get("/{candidate_id}/timeline")
+async def get_candidate_timeline(
+    candidate_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    """Return the FSM transition log for a candidate as a list of timeline events.
+
+    Each event is shaped to match the frontend ApplicationTimeline type.
+    """
+    from ats_backend.models.fsm_transition_log import FSMTransitionLog
+
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(
+        db, candidate_id, current_client.id
+    )
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+
+    logs = (
+        db.query(FSMTransitionLog)
+        .filter(
+            FSMTransitionLog.candidate_id == candidate_id,
+            FSMTransitionLog.client_id == current_client.id,
+        )
+        .order_by(FSMTransitionLog.created_at.asc())
+        .all()
+    )
+
+    # Status → frontend state label mapping (mirrors api.ts statusToState)
+    STATUS_TO_STATE = {
+        "ACTIVE": "TO_REVIEW",
+        "INACTIVE": "REJECTED",
+        "HIRED": "JOINED",
+        "LEFT_COMPANY": "LEFT_COMPANY",
+        "REJECTED": "REJECTED",
+        "INTERVIEW_SCHEDULED": "INTERVIEW_SCHEDULED",
+        "SELECTED": "SELECTED",
+    }
+
+    timeline = []
+    for log in logs:
+        reason = log.reason or ""
+
+        # ── Feedback events ──────────────────────────────────────────────────
+        # Identified by reason starting with "interview_feedback"
+        if reason.startswith("interview_feedback"):
+            parts = dict(
+                p.split("=", 1) for p in reason.split(" | ") if "=" in p
+            )
+            feedback_details = {
+                "roundNumber": int(parts["round"]) if "round" in parts else None,
+                "rating": int(parts["rating"]) if "rating" in parts else None,
+                "recommendation": parts.get("recommendation"),
+            }
+            timeline.append({
+                "id": str(log.id),
+                "candidateId": str(log.candidate_id),
+                "eventType": "feedback",
+                "timestamp": log.created_at.isoformat(),
+                "actor": "client" if log.actor_type == "USER" else "system",
+                "note": parts.get("feedback", ""),
+                "state": STATUS_TO_STATE.get(log.new_status, log.new_status),
+                "oldStatus": None,
+                "newStatus": None,
+                "feedbackDetails": feedback_details,
+                "interviewDetails": None,
+            })
+
+        # ── Interview-scheduled events ───────────────────────────────────────
+        # Identified by new_status == INTERVIEW_SCHEDULED
+        elif log.new_status == "INTERVIEW_SCHEDULED":
+            # Parse pipe-delimited key: value pairs from reason
+            kv = {}
+            for part in reason.split(" | "):
+                if ": " in part:
+                    k, v = part.split(": ", 1)
+                    kv[k.strip()] = v.strip()
+
+            # Map interviewType → frontend mode value
+            interview_type = kv.get("Type", "")
+            mode_map = {
+                "video": "video",
+                "phone": "phone",
+                "in_person": "in_person",
+                "face-to-face": "in_person",
+                "in person": "in_person",
+            }
+            mode = mode_map.get(interview_type.lower(), "video")
+
+            interview_details = {
+                "roundNumber": int(kv["Round"]) if "Round" in kv else 1,
+                "mode": mode,
+                "scheduledDate": kv.get("Date"),
+                "interviewerName": None,
+            }
+            timeline.append({
+                "id": str(log.id),
+                "candidateId": str(log.candidate_id),
+                "eventType": "interview_round",
+                "timestamp": log.created_at.isoformat(),
+                "actor": "client" if log.actor_type == "USER" else "system",
+                "note": kv.get("Notes", ""),
+                "state": "INTERVIEW_SCHEDULED",
+                "oldStatus": log.old_status,
+                "newStatus": log.new_status,
+                "feedbackDetails": None,
+                "interviewDetails": interview_details,
+            })
+
+        # ── Generic status-change events ─────────────────────────────────────
+        else:
+            timeline.append({
+                "id": str(log.id),
+                "candidateId": str(log.candidate_id),
+                "eventType": "status_change",
+                "timestamp": log.created_at.isoformat(),
+                "actor": "client" if log.actor_type == "USER" else "system",
+                "note": reason,
+                "state": STATUS_TO_STATE.get(log.new_status, log.new_status),
+                "oldStatus": log.old_status,
+                "newStatus": log.new_status,
+                "feedbackDetails": None,
+                "interviewDetails": None,
+            })
+
+    logger.info(
+        "Candidate timeline retrieved",
+        candidate_id=str(candidate_id),
+        client_id=str(current_client.id),
+        events=len(timeline),
+    )
+    return timeline
+
+
+
 @router.get("/{candidate_id}/duplicates", response_model=List[CandidateResponse])
 async def find_candidate_duplicates(
     candidate_id: UUID,

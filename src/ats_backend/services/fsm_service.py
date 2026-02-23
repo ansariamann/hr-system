@@ -17,8 +17,11 @@ logger = structlog.get_logger(__name__)
 class FSMService:
     """Service for managing FSM transitions with invariant enforcement."""
     
-    VALID_STATES = ["ACTIVE", "INACTIVE", "JOINED", "LEFT_COMPANY"]
-    TERMINAL_STATES = ["LEFT_COMPANY"]
+    VALID_STATES = [
+        "ACTIVE", "INACTIVE", "JOINED", "LEFT_COMPANY",
+        "INTERVIEW_SCHEDULED", "SELECTED", "REJECTED"
+    ]
+    TERMINAL_STATES = ["LEFT_COMPANY", "REJECTED"]
     
     def __init__(self, db: Session):
         self.db = db

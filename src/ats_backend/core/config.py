@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     lockout_duration_minutes: int = Field(default=30, description="Account lockout duration")
     token_replay_protection: bool = Field(default=True, description="Enable token replay protection")
     password_reset_token_minutes: int = Field(default=30, description="Password reset token validity in minutes")
+
+    # Frontend URLs (for password reset links)
+    frontend_hr_url: str = Field(default="http://localhost:5173", description="HR Dashboard frontend URL")
+    frontend_client_url: str = Field(default="http://localhost:5174", description="Client Portal frontend URL")
+    email_from_address: str = Field(default="noreply@hr-system.local", description="Email sender address")
     
     # Runtime Configuration
     startup_time: Optional[datetime] = Field(default=None, description="System startup time")

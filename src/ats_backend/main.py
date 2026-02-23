@@ -53,6 +53,7 @@ from ats_backend.api.observability import router as observability_router
 from ats_backend.api.clients import router as clients_router
 from ats_backend.api.auth import router as auth_router
 from ats_backend.api.jobs import router as jobs_router
+from ats_backend.api.actions import router as actions_router
 
 # Configure logging
 configure_logging()
@@ -309,6 +310,7 @@ app.include_router(observability_router)
 app.include_router(clients_router)
 app.include_router(auth_router)
 app.include_router(jobs_router)
+app.include_router(actions_router)
 
 @app.post("/auth/login", response_model=Token)
 @with_error_handling(component="authentication")

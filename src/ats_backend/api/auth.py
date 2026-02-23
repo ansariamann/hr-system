@@ -1,5 +1,6 @@
 """Authentication API endpoints."""
 
+import logging
 from datetime import datetime, timedelta
 import hashlib
 import secrets
@@ -32,6 +33,8 @@ from ats_backend.auth.utils import (
     get_password_hash,
     normalize_role,
 )
+from ats_backend.email.send import send_email
+from ats_backend.email.templates import render_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -187,6 +190,27 @@ def start_password_reset(
     )
     db.add(reset_entry)
     db.commit()
+    
+    # Determine reset link based on user role
+    role = (user.role or "").lower()
+    if role.startswith("hr_"):
+        base_url = settings.frontend_hr_url.rstrip("/")
+    else:
+        base_url = settings.frontend_client_url.rstrip("/")
+    reset_link = f"{base_url}/reset-password?token={token}"
+    
+    # Render and send the password reset email
+    user_name = user.full_name or user.email
+    html_body = render_password_reset_email(
+        user_name=user_name,
+        reset_link=reset_link,
+        expiry_minutes=settings.password_reset_token_minutes,
+    )
+    send_email(
+        to=user.email,
+        subject="Reset Your Password",
+        html_body=html_body,
+    )
     
     response = {
         "status": "ok",

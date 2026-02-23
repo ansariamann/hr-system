@@ -43,7 +43,10 @@ class CandidateBase(BaseModel):
     @validator('status')
     def validate_status(cls, v):
         """Validate candidate status."""
-        valid_statuses = ['ACTIVE', 'INACTIVE', 'LEFT', 'HIRED', 'REJECTED']
+        valid_statuses = [
+            'ACTIVE', 'INACTIVE', 'LEFT', 'HIRED', 'REJECTED',
+            'INTERVIEW_SCHEDULED', 'SELECTED',
+        ]
         if v not in valid_statuses:
             raise ValueError(f'Status must be one of: {", ".join(valid_statuses)}')
         return v
@@ -121,7 +124,10 @@ class CandidateUpdate(BaseModel):
     def validate_status(cls, v):
         """Validate candidate status."""
         if v is not None:
-            valid_statuses = ['ACTIVE', 'INACTIVE', 'LEFT', 'HIRED', 'REJECTED']
+            valid_statuses = [
+                'ACTIVE', 'INACTIVE', 'LEFT', 'HIRED', 'REJECTED',
+                'INTERVIEW_SCHEDULED', 'SELECTED',
+            ]
             if v not in valid_statuses:
                 raise ValueError(f'Status must be one of: {", ".join(valid_statuses)}')
         return v
