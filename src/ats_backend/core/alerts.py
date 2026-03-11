@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 import asyncio
 import json
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 import structlog
 from pathlib import Path
 
@@ -98,13 +101,34 @@ class LogNotificationSender(NotificationSender):
 class EmailNotificationSender(NotificationSender):
     """Email notification sender."""
     
+    def _send_email_sync(self, msg, config: Dict[str, Any]):
+        """Synchronous email sending logic."""
+        smtp_host = config.get("smtp_host", "localhost")
+        smtp_port = config.get("smtp_port", 587)
+        smtp_username = config.get("smtp_username")
+        smtp_password = config.get("smtp_password")
+        use_tls = config.get("smtp_use_tls", True)
+
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            if use_tls:
+                server.starttls()
+
+            if smtp_username and smtp_password:
+                server.login(smtp_username, smtp_password)
+
+            server.send_message(msg)
+
     async def send(self, alert: Alert, config: Dict[str, Any]) -> bool:
         """Send notification via email."""
         try:
-            # This would integrate with your email system
-            # For now, just log the email that would be sent
-            
+            recipients = config.get("recipients", [])
+            if not recipients:
+                logger.warning("No recipients configured for email alert", alert_name=alert.name)
+                return False
+
+            from_addr = config.get("from_address", "alerts@example.com")
             subject = f"[{alert.severity.value.upper()}] ATS Alert: {alert.name}"
+
             body = f"""
 Alert: {alert.name}
 Severity: {alert.severity.value}
@@ -118,15 +142,23 @@ Details:
 {json.dumps(alert.details, indent=2)}
 """
             
+            msg = MIMEMultipart()
+            msg['From'] = from_addr
+            msg['To'] = ", ".join(recipients)
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain', 'utf-8'))
+
             logger.info(
-                "Email notification would be sent",
-                to=config.get("recipients", []),
+                "Sending email notification",
+                to=recipients,
                 subject=subject,
                 alert_name=alert.name,
                 severity=alert.severity.value
             )
             
-            # TODO: Integrate with actual email sending service
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._send_email_sync, msg, config)
+
             return True
             
         except Exception as e:
@@ -338,8 +370,12 @@ class AlertManager:
                 enabled=getattr(settings, 'alerts_email_enabled', False),
                 config={
                     "recipients": getattr(settings, 'alerts_email_recipients', []),
-                    "smtp_host": getattr(settings, 'smtp_host', ''),
-                    "smtp_port": getattr(settings, 'smtp_port', 587)
+                    "from_address": getattr(settings, 'alerts_email_from', 'alerts@example.com'),
+                    "smtp_host": getattr(settings, 'smtp_host', 'localhost'),
+                    "smtp_port": getattr(settings, 'smtp_port', 587),
+                    "smtp_username": getattr(settings, 'smtp_username', None),
+                    "smtp_password": getattr(settings, 'smtp_password', None),
+                    "smtp_use_tls": getattr(settings, 'smtp_use_tls', True)
                 }
             ),
             NotificationChannel.SLACK: NotificationConfig(
