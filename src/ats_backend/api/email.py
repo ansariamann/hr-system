@@ -263,7 +263,7 @@ async def get_task_status(
         )
 
 
-@router.get("/jobs", response_model=List[ResumeJobResponse])
+@router.get("/tasks", response_model=List[ResumeJobResponse])
 async def get_resume_jobs(
     status: Optional[str] = None,
     skip: int = 0,
@@ -299,9 +299,9 @@ async def get_resume_jobs(
         )
 
 
-@router.get("/jobs/{job_id}", response_model=ResumeJobResponse)
+@router.get("/tasks/{task_id}", response_model=ResumeJobResponse)
 async def get_resume_job(
-    job_id: UUID,
+    task_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client)
@@ -309,7 +309,7 @@ async def get_resume_job(
     """Get a specific resume job by ID."""
     try:
         resume_job_service = ResumeJobService()
-        job = resume_job_service.get_job_by_id(db, job_id)
+        job = resume_job_service.get_job_by_id(db, task_id)
         
         if not job:
             raise HTTPException(
@@ -331,7 +331,7 @@ async def get_resume_job(
     except Exception as e:
         logger.error(
             "Failed to get resume job",
-            job_id=str(job_id),
+            job_id=str(task_id),
             client_id=str(current_client.id),
             error=str(e)
         )
@@ -341,9 +341,9 @@ async def get_resume_job(
         )
 
 
-@router.post("/jobs/{job_id}/parse")
+@router.post("/tasks/{task_id}/parse")
 async def parse_resume_job(
-    job_id: UUID,
+    task_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client)
@@ -351,7 +351,7 @@ async def parse_resume_job(
     """Synchronously parse a resume uploaded via ingestion."""
     try:
         resume_job_service = ResumeJobService()
-        job = resume_job_service.get_job_by_id(db, job_id)
+        job = resume_job_service.get_job_by_id(db, task_id)
         
         if not job:
             raise HTTPException(
@@ -403,7 +403,7 @@ async def parse_resume_job(
         return {
             "success": True,
             "data": response_data,
-            "job_id": str(job_id)
+            "job_id": str(task_id)
         }
         
     except HTTPException:
@@ -411,7 +411,7 @@ async def parse_resume_job(
     except Exception as e:
         logger.error(
             "Synchronous parsing failed",
-            job_id=str(job_id),
+            job_id=str(task_id),
             client_id=str(current_client.id),
             error=str(e)
         )
@@ -421,9 +421,9 @@ async def parse_resume_job(
         )
 
 
-@router.post("/jobs/{job_id}/retry")
+@router.post("/tasks/{task_id}/retry")
 async def retry_failed_job(
-    job_id: UUID,
+    task_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client)
@@ -432,7 +432,7 @@ async def retry_failed_job(
     try:
         processor = EmailProcessor()
         success = processor.retry_failed_processing(
-            db, current_client.id, job_id, current_user.id
+            db, current_client.id, task_id, current_user.id
         )
         
         if not success:
@@ -444,7 +444,7 @@ async def retry_failed_job(
         return {
             "success": True,
             "message": "Job retry initiated successfully",
-            "job_id": str(job_id)
+            "job_id": str(task_id)
         }
         
     except HTTPException:
@@ -452,7 +452,7 @@ async def retry_failed_job(
     except Exception as e:
         logger.error(
             "Failed to retry job",
-            job_id=str(job_id),
+            job_id=str(task_id),
             client_id=str(current_client.id),
             error=str(e)
         )

@@ -24,7 +24,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/applications", tags=["applications"])
 
 
-@router.post("/", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
 async def create_application(
     request: Request,
     application_data: ApplicationCreate,
@@ -100,7 +100,7 @@ async def create_application(
         )
 
 
-@router.get("/", response_model=List[ApplicationResponse])
+@router.get("", response_model=List[ApplicationResponse])
 async def list_applications(
     application_status: Optional[str] = Query(None, description="Filter by application status"),
     flagged_only: bool = Query(False, description="Show only flagged applications"),
@@ -702,56 +702,7 @@ async def update_application_status(
         )
 
 
-@router.get("/candidate/{candidate_id}", response_model=List[ApplicationResponse])
-async def get_applications_by_candidate(
-    candidate_id: UUID,
-    include_deleted: bool = Query(False, description="Include soft-deleted applications"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    current_client: Client = Depends(get_current_client)
-):
-    """Get all applications for a specific candidate.
-    
-    Returns all applications associated with the specified candidate
-    within the current client's context.
-    """
-    try:
-        with performance_logger.log_operation_time(
-            "get_applications_by_candidate",
-            user_id=str(current_user.id),
-            client_id=str(current_client.id),
-            candidate_id=str(candidate_id)
-        ):
-            application_service = ApplicationService()
-            applications = application_service.get_applications_by_candidate(
-                db=db,
-                client_id=current_client.id,
-                candidate_id=candidate_id,
-                include_deleted=include_deleted
-            )
-            
-            logger.info(
-                "Applications by candidate retrieved via API",
-                candidate_id=str(candidate_id),
-                client_id=str(current_client.id),
-                user_id=str(current_user.id),
-                count=len(applications)
-            )
-            
-            return applications
-            
-    except Exception as e:
-        logger.error(
-            "Failed to get applications by candidate",
-            candidate_id=str(candidate_id),
-            client_id=str(current_client.id),
-            user_id=str(current_user.id),
-            error=str(e)
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to get applications by candidate: {str(e)}"
-        )
+
 
 
 @router.get("/stats/summary")

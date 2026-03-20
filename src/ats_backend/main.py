@@ -49,11 +49,9 @@ from ats_backend.api.candidates import router as candidates_router
 from ats_backend.api.applications import router as applications_router
 from ats_backend.api.security import router as security_router
 from ats_backend.api.sse import router as sse_router
-from ats_backend.api.observability import router as observability_router
 from ats_backend.api.clients import router as clients_router
 from ats_backend.api.auth import router as auth_router
 from ats_backend.api.jobs import router as jobs_router
-from ats_backend.api.actions import router as actions_router
 
 # Configure logging
 configure_logging()
@@ -294,7 +292,7 @@ app.add_middleware(
 Path("uploads").mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
-@app.get("/health")
+@app.get("/health", tags=["monitoring/observability"])
 def health_check():
     """Health check endpoint for container orchestration systems."""
     return {"status": "healthy"}
@@ -306,13 +304,11 @@ app.include_router(applications_router)
 app.include_router(monitoring_router)
 app.include_router(security_router)
 app.include_router(sse_router)
-app.include_router(observability_router)
 app.include_router(clients_router)
 app.include_router(auth_router)
 app.include_router(jobs_router)
-app.include_router(actions_router)
 
-@app.post("/auth/login", response_model=Token)
+@app.post("/auth/login", response_model=Token, tags=["auth"])
 @with_error_handling(component="authentication")
 def login(
     request: Request,
@@ -384,7 +380,7 @@ def login(
         raise error_handler.handle_error(e, context)
 
 
-@app.get("/auth/me", response_model=UserResponse)
+@app.get("/auth/me", response_model=UserResponse, tags=["auth"])
 @with_error_handling(component="authentication")
 async def get_current_user_info(
     current_user: User = Depends(get_current_user)
@@ -398,7 +394,7 @@ async def get_current_user_info(
     return current_user
 
 
-@app.get("/auth/client")
+@app.get("/auth/client", tags=["auth"])
 @with_error_handling(component="authentication")
 async def get_current_client_info(
     current_client: Client = Depends(get_current_client)
@@ -418,7 +414,7 @@ async def get_current_client_info(
     }
 
 
-@app.get("/clients/stats")
+@app.get("/clients/stats", tags=["clients"])
 @with_error_handling(component="client_service")
 async def get_client_stats(
     current_user: User = Depends(get_current_user),

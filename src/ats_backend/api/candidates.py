@@ -2,6 +2,8 @@
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
+from datetime import datetime
+from pydantic import BaseModel
 
 import shutil
 from pathlib import Path
@@ -48,7 +50,15 @@ def _normalize_resume_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
-@router.post("/", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
+def _infer_company_from_payload(payload: Dict[str, Any]) -> Optional[str]:
+    try:
+        from ats_backend.services.candidate_service import infer_company
+        return infer_company(payload.get("previous_employment"))
+    except Exception:
+        return None
+
+
+@router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
 async def create_candidate(
     request: Request,
     candidate_data: CandidateCreate,
@@ -68,6 +78,10 @@ async def create_candidate(
             client_id=str(current_client.id)
         ):
             candidate_payload = _normalize_resume_fields(candidate_data.dict())
+            if not candidate_payload.get("company"):
+                inferred_company = _infer_company_from_payload(candidate_payload)
+                if inferred_company:
+                    candidate_payload["company"] = inferred_company
             if _is_client_scoped_user(current_user) and not candidate_payload.get("assigned_user_id"):
                 candidate_payload["assigned_user_id"] = current_user.id
             candidate_data = CandidateCreate(**candidate_payload)
@@ -178,6 +192,7 @@ async def upload_resume(
                 name=name,
                 email=candidate_data_dict.get("email"),
                 phone=candidate_data_dict.get("phone"),
+                company=_infer_company_from_payload(candidate_data_dict),
                 location=candidate_data_dict.get("location"),
                 present_address=candidate_data_dict.get("present_address"),
                 permanent_address=candidate_data_dict.get("permanent_address"),
@@ -242,7 +257,7 @@ async def upload_resume(
 
 
 
-@router.get("/", response_model=List[CandidateResponse])
+@router.get("", response_model=List[CandidateResponse])
 async def list_candidates(
     name_pattern: Optional[str] = Query(None, description="Search by name pattern"),
     skills: Optional[str] = Query(None, description="Search by skills (comma-separated)"),
@@ -898,3 +913,227 @@ async def get_candidate_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get candidate statistics: {str(e)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Action Payloads & Endpoints
+# ---------------------------------------------------------------------------
+
+class ScheduleInterviewPayload(BaseModel):
+    scheduledDate: Optional[str] = None
+    interviewType: Optional[str] = None
+    notes: Optional[str] = None
+    roundNumber: Optional[int] = 1
+
+class SelectPayload(BaseModel):
+    notes: Optional[str] = None
+
+class RejectPayload(BaseModel):
+    reason: str = "Not selected"
+    feedback: Optional[str] = None
+
+class FeedbackPayload(BaseModel):
+    roundNumber: Optional[int] = 1
+    rating: Optional[int] = None          # 1-5
+    recommendation: Optional[str] = None  # HIRE / NO_HIRE / MAYBE
+    feedback: Optional[str] = None
+
+class LeftCompanyPayload(BaseModel):
+    reason: Optional[str] = None
+
+
+def _log_transition(
+    db: Session,
+    candidate,
+    new_status: str,
+    actor: User,
+    client: Client,
+    reason: str,
+    terminal: bool = False,
+):
+    from ats_backend.models.fsm_transition_log import FSMTransitionLog, ActorType
+    old_status = candidate.status
+    candidate.status = new_status
+    candidate.updated_at = datetime.utcnow()
+
+    log = FSMTransitionLog(
+        candidate_id=candidate.id,
+        old_status=old_status,
+        new_status=new_status,
+        actor_id=actor.id,
+        actor_type=ActorType.USER,
+        reason=reason,
+        is_terminal=terminal,
+        client_id=client.id,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(candidate)
+    return candidate
+
+
+def _log_event(
+    db: Session,
+    candidate,
+    actor: User,
+    client: Client,
+    reason: str,
+):
+    from ats_backend.models.fsm_transition_log import FSMTransitionLog, ActorType
+    log = FSMTransitionLog(
+        candidate_id=candidate.id,
+        old_status=candidate.status,
+        new_status=candidate.status,
+        actor_id=actor.id,
+        actor_type=ActorType.USER,
+        reason=reason,
+        is_terminal=False,
+        client_id=client.id,
+    )
+    db.add(log)
+    db.commit()
+    db.refresh(candidate)
+    return candidate
+
+
+@router.post("/{candidate_id}/schedule-interview", response_model=CandidateResponse)
+async def schedule_interview(
+    candidate_id: UUID,
+    payload: ScheduleInterviewPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    reason_parts = ["Interview scheduled"]
+    if payload.scheduledDate:
+        reason_parts.append(f"Date: {payload.scheduledDate}")
+    if payload.interviewType:
+        reason_parts.append(f"Type: {payload.interviewType}")
+    if payload.roundNumber:
+        reason_parts.append(f"Round: {payload.roundNumber}")
+    if payload.notes:
+        reason_parts.append(f"Notes: {payload.notes}")
+    reason = " | ".join(reason_parts)
+
+    candidate = _log_transition(db, candidate, "INTERVIEW_SCHEDULED", current_user, current_client, reason)
+    logger.info("Interview scheduled", candidate_id=str(candidate.id), client_id=str(current_client.id))
+    return candidate
+
+
+@router.post("/{candidate_id}/select", response_model=CandidateResponse)
+async def select_candidate(
+    candidate_id: UUID,
+    payload: SelectPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    reason = "Candidate selected"
+    if payload.notes:
+        reason += f" | Notes: {payload.notes}"
+
+    candidate = _log_transition(db, candidate, "SELECTED", current_user, current_client, reason)
+    logger.info("Candidate selected", candidate_id=str(candidate.id), client_id=str(current_client.id))
+    return candidate
+
+
+@router.post("/{candidate_id}/reject", response_model=CandidateResponse)
+async def reject_candidate(
+    candidate_id: UUID,
+    payload: RejectPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    reason = f"Rejected: {payload.reason}"
+    if payload.feedback:
+        reason += f" | Feedback: {payload.feedback}"
+
+    candidate = _log_transition(db, candidate, "REJECTED", current_user, current_client, reason, terminal=True)
+    logger.info("Candidate rejected", candidate_id=str(candidate.id), client_id=str(current_client.id))
+    return candidate
+
+
+@router.post("/{candidate_id}/submit-feedback", response_model=CandidateResponse)
+async def submit_feedback(
+    candidate_id: UUID,
+    payload: FeedbackPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    reason_parts = ["interview_feedback"]
+    if payload.roundNumber:
+        reason_parts.append(f"round={payload.roundNumber}")
+    if payload.rating is not None:
+        reason_parts.append(f"rating={payload.rating}")
+    if payload.recommendation:
+        reason_parts.append(f"recommendation={payload.recommendation}")
+    if payload.feedback:
+        reason_parts.append(f"feedback={payload.feedback}")
+    reason = " | ".join(reason_parts)
+
+    candidate = _log_event(db, candidate, current_user, current_client, reason)
+    logger.info("Interview feedback submitted", candidate_id=str(candidate.id), client_id=str(current_client.id))
+    return candidate
+
+
+@router.post("/{candidate_id}/left-company", response_model=CandidateResponse)
+async def left_company(
+    candidate_id: UUID,
+    payload: LeftCompanyPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    if not candidate:
+        raise HTTPException(status_code=404, detail="Candidate not found")
+
+    reason = "Candidate left the company"
+    if payload.reason:
+        reason += f" | Reason: {payload.reason}"
+
+    candidate = _log_transition(db, candidate, "LEFT_COMPANY", current_user, current_client, reason, terminal=True)
+    logger.info("Candidate left company", candidate_id=str(candidate.id), client_id=str(current_client.id))
+    return candidate
+
+
+@router.get("/{candidate_id}/applications")
+async def get_candidate_applications(
+    candidate_id: UUID,
+    include_deleted: bool = Query(False, description="Include soft-deleted applications"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    from ats_backend.services.application_service import ApplicationService
+    application_service = ApplicationService()
+    applications = application_service.get_applications_by_candidate(
+        db=db,
+        client_id=current_client.id,
+        candidate_id=candidate_id,
+        include_deleted=include_deleted
+    )
+    return applications

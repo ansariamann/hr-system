@@ -21,6 +21,8 @@ class Candidate(Base):
     name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)
+    # Most recent company / current employer (denormalized for fast UI display/search).
+    company = Column(String(255), nullable=True)
     location = Column(String(255), nullable=True)
     present_address = Column(Text, nullable=True)
     permanent_address = Column(Text, nullable=True)

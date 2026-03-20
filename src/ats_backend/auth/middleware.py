@@ -101,7 +101,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             "/auth/register",
             "/auth/password/forgot",
             "/auth/password/reset",
-            "/auth/forgot-password",
         ]
         
         return any(path.startswith(skip_path) for skip_path in skip_paths)

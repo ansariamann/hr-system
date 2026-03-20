@@ -17,24 +17,40 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        'password_reset_tokens',
-        sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), primary_key=True),
-        sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id'), nullable=False),
-        sa.Column('token_hash', sa.String(length=128), nullable=False),
-        sa.Column('expires_at', sa.DateTime(), nullable=False),
-        sa.Column('used_at', sa.DateTime(), nullable=True),
-        sa.Column('requested_ip', sa.String(length=45), nullable=True),
-        sa.Column('user_agent', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text('NOW()'), nullable=False),
+    # This migration may be encountered on environments where the table was created
+    # outside Alembic (or via a different branch). Make it idempotent so upgrades
+    # can converge cleanly.
+    conn = op.get_bind()
+    exists = conn.execute(sa.text("SELECT to_regclass('public.password_reset_tokens')")).scalar()
+
+    if not exists:
+        op.create_table(
+            'password_reset_tokens',
+            sa.Column('id', postgresql.UUID(as_uuid=True), server_default=sa.text('gen_random_uuid()'), primary_key=True),
+            sa.Column('user_id', postgresql.UUID(as_uuid=True), sa.ForeignKey('users.id'), nullable=False),
+            sa.Column('token_hash', sa.String(length=128), nullable=False),
+            sa.Column('expires_at', sa.DateTime(), nullable=False),
+            sa.Column('used_at', sa.DateTime(), nullable=True),
+            sa.Column('requested_ip', sa.String(length=45), nullable=True),
+            sa.Column('user_agent', sa.Text(), nullable=True),
+            sa.Column('created_at', sa.DateTime(), server_default=sa.text('NOW()'), nullable=False),
+        )
+
+    # Ensure indexes exist (Postgres supports IF NOT EXISTS for indexes).
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id "
+        "ON password_reset_tokens (user_id);"
     )
-    
-    op.create_index('idx_password_reset_tokens_user_id', 'password_reset_tokens', ['user_id'])
-    op.create_index('idx_password_reset_tokens_token_hash', 'password_reset_tokens', ['token_hash'], unique=True)
-    
-    # Enable RLS and add policy for client isolation
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_password_reset_tokens_token_hash "
+        "ON password_reset_tokens (token_hash);"
+    )
+
+    # Enable RLS and (re)create policy for client isolation.
     op.execute("ALTER TABLE password_reset_tokens ENABLE ROW LEVEL SECURITY;")
-    op.execute("""
+    op.execute("DROP POLICY IF EXISTS client_isolation_password_reset_tokens ON password_reset_tokens;")
+    op.execute(
+        """
         CREATE POLICY client_isolation_password_reset_tokens ON password_reset_tokens
             FOR ALL TO authenticated_users
             USING (
@@ -43,7 +59,8 @@ def upgrade() -> None:
                     WHERE client_id = current_setting('app.current_client_id', true)::UUID
                 )
             );
-    """)
+        """
+    )
 
 
 def downgrade() -> None:

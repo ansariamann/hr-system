@@ -209,6 +209,16 @@ def process_resume_file(
             
             # Add candidate hash to data
             candidate_data["candidate_hash"] = duplicate_result.candidate_hash
+
+            # Fill denormalized company field if missing (resume_tasks doesn't go through API helpers).
+            if not candidate_data.get("company"):
+                try:
+                    from ats_backend.services.candidate_service import infer_company
+                    inferred_company = infer_company(candidate_data.get("previous_employment"))
+                    if inferred_company:
+                        candidate_data["company"] = inferred_company
+                except Exception:
+                    pass
             
             # Create candidate
             candidate_create = CandidateCreate(**candidate_data)

@@ -18,15 +18,19 @@ from ats_backend.services.job_service import JobService
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-@router.get("/", response_model=List[JobResponse])
+@router.get("", response_model=List[JobResponse])
 @with_error_handling(component="jobs_api")
 def list_jobs(
     search: Optional[str] = None,
     company_name: Optional[str] = None,
     job_title: Optional[str] = None,
+    field: Optional[str] = None,
     location: Optional[str] = None,
     min_experience: Optional[int] = Query(None, ge=0, le=60),
     max_experience: Optional[int] = Query(None, ge=0, le=60),
+    min_salary_lpa: Optional[float] = Query(None, ge=0),
+    max_salary_lpa: Optional[float] = Query(None, ge=0),
+    sort: Optional[str] = Query(None, max_length=32),
     skip: int = 0,
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -39,15 +43,19 @@ def list_jobs(
         search=search,
         company_name=company_name,
         job_title=job_title,
+        field=field,
         location=location,
         min_experience=min_experience,
         max_experience=max_experience,
+        min_salary_lpa=min_salary_lpa,
+        max_salary_lpa=max_salary_lpa,
+        sort=sort,
         skip=skip,
         limit=limit
     )
 
 
-@router.post("/", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @with_error_handling(component="jobs_api")
 def create_job(
     payload: JobCreate,

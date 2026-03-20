@@ -1,5 +1,6 @@
 """Candidate management service."""
 
+from datetime import date, datetime
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
@@ -11,6 +12,70 @@ from ats_backend.repositories.candidate import CandidateRepository
 from ats_backend.schemas.candidate import CandidateCreate, CandidateUpdate
 
 logger = structlog.get_logger(__name__)
+
+def _try_parse_date(value: Any) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        # Accept YYYY-MM-DD, YYYY-MM, YYYY.
+        for fmt in ("%Y-%m-%d", "%Y-%m", "%Y"):
+            try:
+                dt = datetime.strptime(s, fmt)
+                return dt.date()
+            except Exception:
+                continue
+    return None
+
+
+def infer_company(previous_employment: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+    """Infer most recent company from previous employment history."""
+    if not previous_employment or not isinstance(previous_employment, list):
+        return None
+
+    def company_of(item: Dict[str, Any]) -> Optional[str]:
+        for k in ("company", "company_name", "employer", "organization", "org", "client"):
+            v = item.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return None
+
+    best: Optional[Dict[str, Any]] = None
+    best_score: Optional[date] = None
+
+    for item in previous_employment:
+        if not isinstance(item, dict):
+            continue
+        comp = company_of(item)
+        if not comp:
+            continue
+
+        # Treat current roles (no end date / "present") as most recent.
+        end_raw = item.get("end_date") or item.get("endDate") or item.get("to")
+        if isinstance(end_raw, str) and end_raw.strip().lower() in ("present", "current", "now"):
+            return comp
+        end_dt = _try_parse_date(end_raw)
+        start_dt = _try_parse_date(item.get("start_date") or item.get("startDate") or item.get("from"))
+
+        score = end_dt or start_dt
+        if score is None:
+            # If nothing is parseable, use first available as fallback.
+            if best is None:
+                best = item
+            continue
+        if best_score is None or score > best_score:
+            best_score = score
+            best = item
+
+    if best and isinstance(best, dict):
+        return company_of(best)
+    return None
 
 
 class CandidateService:
@@ -45,13 +110,20 @@ class CandidateService:
             ValueError: If candidate creation fails
         """
         try:
+            # Normalize/derive denormalized fields.
+            candidate_payload = candidate_data.dict()
+            if not candidate_payload.get("company"):
+                inferred = infer_company(candidate_payload.get("previous_employment"))
+                if inferred:
+                    candidate_payload["company"] = inferred
+
             candidate = self.repository.create_with_audit(
                 db=db,
                 client_id=client_id,
                 user_id=user_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
-                **candidate_data.dict()
+                **candidate_payload
             )
             
             logger.info(
@@ -197,6 +269,12 @@ class CandidateService:
 
             # Only update fields that are provided
             update_data = candidate_data.dict(exclude_unset=True)
+            if "company" not in update_data:
+                # Keep company denormalization in sync if previous employment is updated.
+                if "previous_employment" in update_data:
+                    inferred = infer_company(update_data.get("previous_employment"))
+                    if inferred:
+                        update_data["company"] = inferred
             
             candidate = self.repository.update_with_audit(
                 db=db,

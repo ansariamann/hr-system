@@ -160,7 +160,6 @@ def register_user(
 
 
 @router.post("/password/forgot")
-@router.post("/forgot-password")
 @with_error_handling(component="authentication")
 def start_password_reset(
     payload: PasswordResetRequest,
@@ -223,7 +222,6 @@ def start_password_reset(
 
 
 @router.post("/password/reset")
-@router.post("/reset-password")
 @with_error_handling(component="authentication")
 def confirm_password_reset(
     payload: PasswordResetConfirm,

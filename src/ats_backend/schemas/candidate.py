@@ -14,6 +14,7 @@ class CandidateBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255, description="Candidate full name")
     email: Optional[EmailStr] = Field(None, description="Candidate email address")
     phone: Optional[str] = Field(None, max_length=50, description="Candidate phone number")
+    company: Optional[str] = Field(None, max_length=255, description="Most recent / current company")
     location: Optional[str] = Field(None, max_length=255, description="Candidate location/city")
     present_address: Optional[str] = Field(None, description="Current/present address")
     permanent_address: Optional[str] = Field(None, description="Permanent address")
@@ -95,6 +96,7 @@ class CandidateUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=50)
+    company: Optional[str] = Field(None, max_length=255)
     location: Optional[str] = Field(None, max_length=255)
     present_address: Optional[str] = None
     permanent_address: Optional[str] = None

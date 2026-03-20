@@ -1,11 +1,11 @@
 """Job posting service."""
 
-from datetime import date
 from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_
+from sqlalchemy.sql import expression
 
 from ats_backend.models.job import Job
 
@@ -30,9 +30,13 @@ class JobService:
         search: Optional[str] = None,
         company_name: Optional[str] = None,
         job_title: Optional[str] = None,
+        field: Optional[str] = None,
         location: Optional[str] = None,
         min_experience: Optional[int] = None,
         max_experience: Optional[int] = None,
+        min_salary_lpa: Optional[float] = None,
+        max_salary_lpa: Optional[float] = None,
+        sort: Optional[str] = None,
         skip: int = 0,
         limit: int = 100
     ) -> List[Job]:
@@ -48,6 +52,10 @@ class JobService:
         if job_title:
             query = query.filter(Job.title.ilike(f"%{job_title.strip()}%"))
 
+        if field:
+            like = f"%{field.strip()}%"
+            query = query.filter(or_(Job.title.ilike(like), Job.requirements.ilike(like)))
+
         if location:
             query = query.filter(Job.location.ilike(f"%{location.strip()}%"))
 
@@ -57,7 +65,53 @@ class JobService:
         if max_experience is not None:
             query = query.filter(Job.experience_required <= max_experience)
 
-        query = query.order_by(Job.posting_date.desc(), Job.created_at.desc())
+        if min_salary_lpa is not None:
+            query = query.filter(Job.salary_lpa >= min_salary_lpa)
+
+        if max_salary_lpa is not None:
+            query = query.filter(Job.salary_lpa <= max_salary_lpa)
+
+        # Sorting choices are intentionally constrained to avoid SQL injection.
+        sort = (sort or "").strip().lower() or "newest"
+        if sort == "salary_desc":
+            query = query.order_by(
+                expression.nullslast(Job.salary_lpa.desc()),
+                Job.posting_date.desc(),
+                Job.created_at.desc(),
+            )
+        elif sort == "salary_asc":
+            query = query.order_by(
+                expression.nullslast(Job.salary_lpa.asc()),
+                Job.posting_date.desc(),
+                Job.created_at.desc(),
+            )
+        elif sort == "exp_desc":
+            query = query.order_by(
+                expression.nullslast(Job.experience_required.desc()),
+                Job.posting_date.desc(),
+                Job.created_at.desc(),
+            )
+        elif sort == "exp_asc":
+            query = query.order_by(
+                expression.nullslast(Job.experience_required.asc()),
+                Job.posting_date.desc(),
+                Job.created_at.desc(),
+            )
+        elif sort == "location_asc":
+            query = query.order_by(
+                expression.nullslast(Job.location.asc()),
+                Job.posting_date.desc(),
+                Job.created_at.desc(),
+            )
+        elif sort == "company_asc":
+            query = query.order_by(
+                Job.company_name.asc(),
+                Job.posting_date.desc(),
+                Job.created_at.desc(),
+            )
+        else:
+            query = query.order_by(Job.posting_date.desc(), Job.created_at.desc())
+
         return query.offset(skip).limit(limit).all()
 
     @staticmethod
