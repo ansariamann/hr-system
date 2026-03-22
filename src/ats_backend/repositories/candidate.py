@@ -48,6 +48,7 @@ class CandidateRepository(AuditedRepository[Candidate]):
         min_ctc_expected: Optional[float] = None,
         max_ctc_expected: Optional[float] = None,
         status: Optional[str] = None,
+        is_direct_interview: Optional[bool] = None,
         assigned_user_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 100,
@@ -72,6 +73,8 @@ class CandidateRepository(AuditedRepository[Candidate]):
 
         if status:
             conditions.append(Candidate.status == status)
+        if is_direct_interview is not None:
+            conditions.append(Candidate.is_direct_interview == is_direct_interview)
         if assigned_user_id is not None:
             conditions.append(Candidate.assigned_user_id == assigned_user_id)
 

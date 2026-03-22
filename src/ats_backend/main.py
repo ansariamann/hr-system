@@ -52,6 +52,7 @@ from ats_backend.api.sse import router as sse_router
 from ats_backend.api.clients import router as clients_router
 from ats_backend.api.auth import router as auth_router
 from ats_backend.api.jobs import router as jobs_router
+from ats_backend.api.activity_logs import router as activity_logs_router
 
 # Configure logging
 configure_logging()
@@ -307,6 +308,7 @@ app.include_router(sse_router)
 app.include_router(clients_router)
 app.include_router(auth_router)
 app.include_router(jobs_router)
+app.include_router(activity_logs_router)
 
 @app.post("/auth/login", response_model=Token, tags=["auth"])
 @with_error_handling(component="authentication")

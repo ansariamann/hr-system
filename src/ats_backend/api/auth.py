@@ -21,6 +21,7 @@ from ats_backend.auth.models import (
     Token,
     RegisterRequest,
     RegisterResponse,
+    PasswordChangeRequest,
     PasswordResetRequest,
     PasswordResetConfirm,
     PasswordResetToken,
@@ -32,6 +33,7 @@ from ats_backend.auth.utils import (
     create_user,
     get_password_hash,
     normalize_role,
+    verify_password,
 )
 from ats_backend.email.send import send_email
 from ats_backend.email.templates import render_password_reset_email
@@ -258,6 +260,52 @@ def confirm_password_reset(
     
     db.commit()
     
+    return {"status": "ok"}
+
+
+@router.post("/password/change")
+@with_error_handling(component="authentication")
+def change_password(
+    payload: PasswordChangeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Change password for the currently authenticated user."""
+    if not payload.current_password or not payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password and new password are required",
+        )
+
+    if len(payload.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long",
+        )
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from current password",
+        )
+
+    user = db.query(User).filter(User.id == current_user.id, User.is_active == True).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found or inactive",
+        )
+
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    set_client_context(db, user.client_id)
+    user.hashed_password = get_password_hash(payload.new_password)
+    db.commit()
+
     return {"status": "ok"}
 
 

@@ -29,6 +29,7 @@ class CandidateBase(BaseModel):
     ctc_current: Optional[Decimal] = Field(None, ge=0, description="Current CTC in decimal format")
     ctc_expected: Optional[Decimal] = Field(None, ge=0, description="Expected CTC in decimal format")
     status: str = Field(default="ACTIVE", description="Candidate status")
+    is_direct_interview: bool = Field(default=False, description="Whether candidate has a direct interview record")
     remark: Optional[str] = Field(None, description="Candidate remarks or notes")
     
     @validator('phone')
@@ -111,6 +112,7 @@ class CandidateUpdate(BaseModel):
     ctc_current: Optional[Decimal] = Field(None, ge=0)
     ctc_expected: Optional[Decimal] = Field(None, ge=0)
     status: Optional[str] = None
+    is_direct_interview: Optional[bool] = None
     remark: Optional[str] = None
     
     @validator('phone')

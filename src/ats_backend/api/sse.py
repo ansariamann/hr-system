@@ -7,7 +7,12 @@ from sqlalchemy.orm import Session
 import structlog
 
 from ats_backend.core.database import get_db
-from ats_backend.auth.dependencies import get_current_user, get_current_client
+from ats_backend.auth.dependencies import (
+    get_current_user,
+    get_current_client,
+    get_current_user_sse,
+    get_current_client_sse,
+)
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
 from ats_backend.core.sse_manager import sse_manager
@@ -23,8 +28,8 @@ router = APIRouter(prefix="/sse", tags=["sse"])
 async def stream_events(
     request: Request,
     last_event_id: Optional[str] = Query(None, description="Last event ID for reconnection"),
-    current_user: User = Depends(get_current_user),
-    current_client: Client = Depends(get_current_client)
+    current_user: User = Depends(get_current_user_sse),
+    current_client: Client = Depends(get_current_client_sse)
 ):
     """Stream real-time events via Server-Sent Events.
     

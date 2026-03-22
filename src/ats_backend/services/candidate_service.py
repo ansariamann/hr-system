@@ -199,6 +199,7 @@ class CandidateService:
         min_ctc_expected: Optional[float] = None,
         max_ctc_expected: Optional[float] = None,
         status: Optional[str] = None,
+        is_direct_interview: Optional[bool] = None,
         assigned_user_id: Optional[UUID] = None,
         skip: int = 0,
         limit: int = 100
@@ -232,6 +233,7 @@ class CandidateService:
             min_ctc_expected=min_ctc_expected,
             max_ctc_expected=max_ctc_expected,
             status=status,
+            is_direct_interview=is_direct_interview,
             assigned_user_id=assigned_user_id,
             skip=skip,
             limit=limit

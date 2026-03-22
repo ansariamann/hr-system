@@ -10,6 +10,7 @@ from ats_backend.core.database import get_db
 from ats_backend.auth.dependencies import get_current_user, get_current_client
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
+from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.application_service import ApplicationService
 from ats_backend.services.client_service import ClientService
 from ats_backend.schemas.application import (
@@ -73,6 +74,17 @@ async def create_application(
                 candidate_id=str(application.candidate_id),
                 status=application.status
             )
+            
+            # Record activity log
+            activity_log = ActivityLog(
+                client_id=target_client_id,
+                user_id=current_user.id,
+                action_type="APPLICATION_CREATED",
+                entity_id=application.id,
+                details={"candidate_id": str(application.candidate_id), "job_id": str(application.job_id)}
+            )
+            db.add(activity_log)
+            db.commit()
             
             return application
             

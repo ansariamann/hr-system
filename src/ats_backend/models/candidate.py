@@ -38,6 +38,7 @@ class Candidate(Base):
     ctc_expected = Column(DECIMAL(12, 2), nullable=True)
     status = Column(String(50), default="ACTIVE", nullable=False)
     is_blacklisted = Column(Boolean, default=False, nullable=False)
+    is_direct_interview = Column(Boolean, default=False, nullable=False)
     candidate_hash = Column(String(64), nullable=True)
     remark = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

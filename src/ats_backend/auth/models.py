@@ -129,6 +129,12 @@ class PasswordResetConfirm(BaseModel):
     new_password: str
 
 
+class PasswordChangeRequest(BaseModel):
+    """Authenticated password change request."""
+    current_password: str
+    new_password: str
+
+
 class RoleValidationRequest(BaseModel):
     """Role validation request."""
     roles: List[str]

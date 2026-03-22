@@ -2,21 +2,25 @@
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID, uuid4
-from datetime import datetime
-from pydantic import BaseModel
+from datetime import datetime, timedelta, timezone
+from pydantic import BaseModel, field_validator
 
 import shutil
 from pathlib import Path
 import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import structlog
 
 from ats_backend.core.database import get_db
-from ats_backend.auth.dependencies import get_current_user, get_current_client
+from ats_backend.auth.dependencies import get_current_user, get_current_client, require_roles
 from ats_backend.auth.models import User
+from ats_backend.models.candidate import Candidate
 from ats_backend.models.client import Client
+from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.candidate_service import CandidateService
+from ats_backend.services.interview_service import InterviewService
 from ats_backend.schemas.candidate import (
     CandidateCreate,
     CandidateUpdate,
@@ -234,6 +238,17 @@ async def upload_resume(
             )
             keep_uploaded_file = True
             
+            # Record activity log
+            activity_log = ActivityLog(
+                client_id=current_client.id,
+                user_id=current_user.id,
+                action_type="CANDIDATE_UPLOADED",
+                entity_id=candidate.id,
+                details={"candidate_name": candidate.name, "filename": file.filename}
+            )
+            db.add(activity_log)
+            db.commit()
+            
             return candidate
             
     except Exception as e:
@@ -270,6 +285,7 @@ async def list_candidates(
     min_ctc_expected: Optional[float] = Query(None, description="Filter by minimum expected CTC"),
     max_ctc_expected: Optional[float] = Query(None, description="Filter by maximum expected CTC"),
     candidate_status: Optional[str] = Query(None, description="Filter by candidate status"),
+    is_direct_interview: Optional[bool] = Query(None, description="Filter by direct interview flag"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records"),
     db: Session = Depends(get_db),
@@ -307,6 +323,7 @@ async def list_candidates(
                 min_ctc_expected=min_ctc_expected,
                 max_ctc_expected=max_ctc_expected,
                 status=candidate_status,
+                is_direct_interview=is_direct_interview,
                 assigned_user_id=current_user.id if _is_client_scoped_user(current_user) else None,
                 skip=skip,
                 limit=limit
@@ -327,7 +344,8 @@ async def list_candidates(
                     "max_ctc_current": max_ctc_current,
                     "min_ctc_expected": min_ctc_expected,
                     "max_ctc_expected": max_ctc_expected,
-                    "status": candidate_status
+                    "status": candidate_status,
+                    "is_direct_interview": is_direct_interview,
                 }
             )
             
@@ -942,6 +960,87 @@ class LeftCompanyPayload(BaseModel):
     reason: Optional[str] = None
 
 
+class DirectInterviewPayload(BaseModel):
+    """Payload for recording a direct interview with a candidate."""
+    interview_date: datetime
+    notes: Optional[str] = None
+    rating: Optional[int] = None  # 1-5 scale
+    company_id: UUID  # Target company for candidate placement
+    
+    @field_validator('interview_date')
+    @classmethod
+    def validate_interview_date(cls, v: datetime) -> datetime:
+        """Validate interview date and normalize timezone-aware values to UTC."""
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        now = datetime.utcnow()
+        min_date = now - timedelta(days=365 * 5)
+        max_date = now + timedelta(days=365 * 5)
+        if v < min_date or v > max_date:
+            raise ValueError(f"Interview date must be between {min_date.date()} and {max_date.date()}")
+        return v
+    
+    @field_validator('rating')
+    @classmethod
+    def validate_rating(cls, v: Optional[int]) -> Optional[int]:
+        """Validate rating is between 1-5 if provided."""
+        if v is not None and (v < 1 or v > 5):
+            raise ValueError("Rating must be between 1 and 5")
+        return v
+
+
+class DirectSelectPayload(BaseModel):
+    """Payload for selecting a candidate via direct interview and adding to company pool."""
+    company_id: UUID
+    notes: Optional[str] = None
+
+
+class UpdateInterviewPayload(BaseModel):
+    """Payload for updating an interview record."""
+    interview_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    rating: Optional[int] = None
+    company_id: Optional[UUID] = None
+
+    @field_validator('interview_date')
+    @classmethod
+    def validate_interview_date(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is None:
+            return v
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        now = datetime.utcnow()
+        min_date = now - timedelta(days=365 * 5)
+        max_date = now + timedelta(days=365 * 5)
+        if v < min_date or v > max_date:
+            raise ValueError(f"Interview date must be between {min_date.date()} and {max_date.date()}")
+        return v
+
+    @field_validator('rating')
+    @classmethod
+    def validate_rating(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and (v < 1 or v > 5):
+            raise ValueError("Rating must be between 1 and 5")
+        return v
+
+
+class InterviewRecordResponse(BaseModel):
+    """Response schema for interview records."""
+    id: UUID
+    candidate_id: UUID
+    client_id: UUID
+    company_id: UUID
+    interviewer_id: UUID
+    interview_date: datetime
+    notes: Optional[str] = None
+    rating: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 def _log_transition(
     db: Session,
     candidate,
@@ -1045,6 +1144,503 @@ async def select_candidate(
     candidate = _log_transition(db, candidate, "SELECTED", current_user, current_client, reason)
     logger.info("Candidate selected", candidate_id=str(candidate.id), client_id=str(current_client.id))
     return candidate
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# DIRECT INTERVIEW ENDPOINTS
+# ────────────────────────────────────────────────────────────────────────────
+
+@router.post("/{candidate_id}/direct-interview", response_model=InterviewRecordResponse)
+async def record_direct_interview(
+    candidate_id: UUID,
+    payload: DirectInterviewPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+    _: User = Depends(require_roles(['hr_admin'])),
+):
+    """Record a direct interview with a candidate.
+    
+    Only hr_admin users can conduct direct interviews. Captures interview details
+    (date, notes, rating, interviewer) for a candidate without requiring a job posting.
+    """
+    try:
+        with performance_logger.log_operation_time(
+            "record_direct_interview",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id),
+            candidate_id=str(candidate_id)
+        ):
+            candidate_service = CandidateService()
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            company = db.query(Client).filter(
+                Client.id == payload.company_id,
+                Client.id == current_client.id
+            ).first()
+            if not company:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid company_id or company does not belong to current client"
+                )
+
+            interview_service = InterviewService()
+            interview_record = interview_service.record_interview(
+                db=db,
+                candidate=candidate,
+                client_id=current_client.id,
+                company_id=payload.company_id,
+                interviewer_id=current_user.id,
+                interview_date=payload.interview_date,
+                notes=payload.notes,
+                rating=payload.rating,
+                log_activity=True,
+            )
+            db.commit()
+            db.refresh(interview_record)
+
+            logger.info(
+                "Direct interview recorded",
+                candidate_id=str(candidate_id),
+                client_id=str(current_client.id),
+                user_id=str(current_user.id),
+                company_id=str(payload.company_id),
+                rating=payload.rating
+            )
+
+            return InterviewRecordResponse.model_validate(interview_record)
+    
+    except HTTPException:
+        raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to record direct interview",
+            candidate_id=str(candidate_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to record direct interview: {str(e)}"
+        )
+
+
+@router.post("/{candidate_id}/direct-select", response_model=CandidateResponse)
+async def select_candidate_directly(
+    candidate_id: UUID,
+    payload: DirectSelectPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+    _: User = Depends(require_roles(['hr_admin'])),
+):
+    """Select a candidate via direct interview and add to company's talent pool.
+    
+    Only hr_admin users can perform direct selection. Transitions candidate from
+    ACTIVE to SELECTED status and associates them with the specified company.
+    """
+    try:
+        with performance_logger.log_operation_time(
+            "select_candidate_directly",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id),
+            candidate_id=str(candidate_id)
+        ):
+            candidate_service = CandidateService()
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            if candidate.status != "ACTIVE":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Candidate must be in ACTIVE status to perform direct selection"
+                )
+            if not candidate.is_direct_interview:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Candidate must have a direct interview recorded first"
+                )
+
+            company = db.query(Client).filter(
+                Client.id == payload.company_id,
+                Client.id == current_client.id
+            ).first()
+            if not company:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid company_id or company does not belong to current client"
+                )
+
+            from ats_backend.models.interview_record import InterviewRecord
+            latest_interview = (
+                db.query(InterviewRecord)
+                .filter(
+                    InterviewRecord.candidate_id == candidate_id,
+                    InterviewRecord.client_id == current_client.id,
+                    InterviewRecord.company_id == payload.company_id,
+                    InterviewRecord.deleted_at.is_(None),
+                )
+                .order_by(InterviewRecord.created_at.desc(), InterviewRecord.id.desc())
+                .first()
+            )
+            if not latest_interview:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Candidate must have a direct interview for the selected company first"
+                )
+
+            from ats_backend.models.fsm_transition_log import FSMTransitionLog, ActorType
+
+            old_status = candidate.status
+            candidate.status = "SELECTED"
+            candidate.updated_at = datetime.utcnow()
+
+            transition_log = FSMTransitionLog(
+                candidate_id=candidate.id,
+                old_status=old_status,
+                new_status="SELECTED",
+                actor_id=current_user.id,
+                actor_type=ActorType.USER,
+                reason=f"Direct interview selection | Company: {str(payload.company_id)}" + (f" | Notes: {payload.notes}" if payload.notes else ""),
+                is_terminal=False,
+                client_id=current_client.id,
+            )
+            activity_log = ActivityLog(
+                client_id=current_client.id,
+                user_id=current_user.id,
+                action_type="DIRECT_SELECTION",
+                entity_id=candidate_id,
+                details={
+                    "company_id": str(payload.company_id),
+                    "interview_id": str(latest_interview.id),
+                    "notes": payload.notes,
+                }
+            )
+            db.add(transition_log)
+            db.add(activity_log)
+            db.add(candidate)
+            db.commit()
+            db.refresh(candidate)
+
+            logger.info(
+                "Candidate selected via direct interview",
+                candidate_id=str(candidate_id),
+                client_id=str(current_client.id),
+                user_id=str(current_user.id),
+                company_id=str(payload.company_id)
+            )
+
+            return candidate
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to select candidate directly",
+            candidate_id=str(candidate_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to select candidate directly: {str(e)}"
+        )
+
+
+@router.get("/{candidate_id}/interview-history", response_model=List[InterviewRecordResponse])
+async def get_interview_history(
+    candidate_id: UUID,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client)
+):
+    """Get interview history for a candidate.
+    
+    Returns all interview records associated with a candidate, paginated with consistent ordering.
+    Only hr_admin users can view all interviews; others can only view if assigned to candidate.
+    """
+    try:
+        with performance_logger.log_operation_time(
+            "get_interview_history",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id),
+            candidate_id=str(candidate_id)
+        ):
+            candidate_service = CandidateService()
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+            
+            # Check access control
+            is_admin = (current_user.role or "").lower() == "hr_admin"
+            if not is_admin and candidate.assigned_user_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not allowed to view interview history for this candidate"
+                )
+            
+            interview_service = InterviewService()
+            interviews = interview_service.get_interview_history(
+                db=db,
+                candidate_id=candidate_id,
+                client_id=current_client.id,
+                skip=skip,
+                limit=limit,
+            )
+            
+            logger.info(
+                "Interview history retrieved",
+                candidate_id=str(candidate_id),
+                client_id=str(current_client.id),
+                user_id=str(current_user.id),
+                count=len(interviews)
+            )
+            
+            return [InterviewRecordResponse.model_validate(interview) for interview in interviews]
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to get interview history",
+            candidate_id=str(candidate_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get interview history: {str(e)}"
+        )
+
+
+@router.patch("/{candidate_id}/interview-history/{interview_id}", response_model=InterviewRecordResponse)
+async def update_interview_record(
+    candidate_id: UUID,
+    interview_id: UUID,
+    payload: UpdateInterviewPayload,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+    _: User = Depends(require_roles(['hr_admin'])),
+):
+    """Update a direct interview record while the candidate is still active."""
+    try:
+        with performance_logger.log_operation_time(
+            "update_interview_record",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id),
+            candidate_id=str(candidate_id),
+            interview_id=str(interview_id),
+        ):
+            candidate_service = CandidateService()
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            interview_service = InterviewService()
+            interview = interview_service.get_interview_by_id(
+                db=db,
+                interview_id=interview_id,
+                client_id=current_client.id,
+            )
+            if not interview or interview.candidate_id != candidate_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Interview record not found"
+                )
+
+            if payload.company_id is not None:
+                company = db.query(Client).filter(
+                    Client.id == payload.company_id,
+                    Client.id == current_client.id
+                ).first()
+                if not company:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid company_id or company does not belong to current client"
+                    )
+
+            interview = interview_service.update_interview(
+                db=db,
+                interview=interview,
+                candidate=candidate,
+                editor_id=current_user.id,
+                interview_date=payload.interview_date,
+                company_id=payload.company_id,
+                notes=payload.notes,
+                rating=payload.rating,
+                log_activity=True,
+            )
+            db.commit()
+            db.refresh(interview)
+            return InterviewRecordResponse.model_validate(interview)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to update interview record",
+            candidate_id=str(candidate_id),
+            interview_id=str(interview_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update interview record: {str(e)}"
+        )
+
+
+@router.delete("/{candidate_id}/interview-history/{interview_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_interview_record(
+    candidate_id: UUID,
+    interview_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+    _: User = Depends(require_roles(['hr_admin'])),
+):
+    """Soft-delete a direct interview record while the candidate is still active."""
+    try:
+        with performance_logger.log_operation_time(
+            "delete_interview_record",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id),
+            candidate_id=str(candidate_id),
+            interview_id=str(interview_id),
+        ):
+            candidate_service = CandidateService()
+            candidate = candidate_service.get_candidate_by_id_for_client(
+                db, candidate_id, current_client.id
+            )
+            if not candidate:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Candidate not found"
+                )
+
+            interview_service = InterviewService()
+            interview = interview_service.get_interview_by_id(
+                db=db,
+                interview_id=interview_id,
+                client_id=current_client.id,
+            )
+            if not interview or interview.candidate_id != candidate_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Interview record not found"
+                )
+
+            deleted = interview_service.soft_delete_interview(
+                db=db,
+                candidate=candidate,
+                interview_id=interview_id,
+                client_id=current_client.id,
+                actor_id=current_user.id,
+                log_activity=True,
+            )
+            if not deleted:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Interview record not found"
+                )
+            db.commit()
+            return None
+    except HTTPException:
+        raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to delete interview record",
+            candidate_id=str(candidate_id),
+            interview_id=str(interview_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete interview record: {str(e)}"
+        )
+
+
+@router.get("/direct-interview/stats")
+async def get_direct_interview_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+    _: User = Depends(require_roles(['hr_admin'])),
+):
+    """Return direct interview workflow counts."""
+    total_pending = db.query(func.count()).select_from(Candidate).filter(
+        Candidate.client_id == current_client.id,
+        Candidate.status == "ACTIVE",
+        Candidate.is_direct_interview.is_(False),
+    ).scalar()
+    total_interviewed = db.query(func.count()).select_from(Candidate).filter(
+        Candidate.client_id == current_client.id,
+        Candidate.status == "ACTIVE",
+        Candidate.is_direct_interview.is_(True),
+    ).scalar()
+    total_selected = db.query(func.count()).select_from(Candidate).filter(
+        Candidate.client_id == current_client.id,
+        Candidate.status == "SELECTED",
+    ).scalar()
+
+    return {
+        "pending": total_pending or 0,
+        "interviewed": total_interviewed or 0,
+        "selected": total_selected or 0,
+    }
 
 
 @router.post("/{candidate_id}/reject", response_model=CandidateResponse)

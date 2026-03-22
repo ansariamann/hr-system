@@ -3,7 +3,7 @@
 from typing import Optional, Iterable
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 import structlog
@@ -146,6 +146,102 @@ async def get_optional_current_user(
     except Exception as e:
         logger.debug("Optional authentication failed", error=str(e))
         return None
+
+
+async def get_current_user_sse(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token_param: Optional[str] = Query(None, alias="token", description="JWT token for SSE authentication"),
+    db: Session = Depends(get_db)
+) -> User:
+    """Get current authenticated user for SSE connections.
+    
+    Accepts token from either:
+    1. Authorization header (Bearer token) - Standard REST
+    2. Query parameter (?token=...) - For SSE (EventSource API limitation)
+    
+    Args:
+        credentials: HTTP Bearer credentials (optional)
+        token_param: JWT token from query parameter (optional)
+        db: Database session
+        
+    Returns:
+        Current authenticated user
+        
+    Raises:
+        HTTPException: If authentication fails
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    # Try header first, then query parameter
+    token = None
+    if credentials:
+        token = credentials.credentials
+    elif token_param:
+        token = token_param
+    
+    if not token:
+        logger.warning("No authentication token provided for SSE")
+        raise credentials_exception
+    
+    try:
+        token_data = await verify_token(token, db)
+        
+        if token_data is None or token_data.user_id is None:
+            logger.info("Invalid token data for SSE")
+            raise credentials_exception
+        
+        user = get_user_by_id(db, token_data.user_id)
+        
+        if user is None:
+            logger.warning("SSE user not found", user_id=str(token_data.user_id))
+            raise credentials_exception
+        
+        # Set client context for RLS
+        if user.client_id:
+            set_client_context(db, user.client_id)
+            logger.debug("SSE client context set", 
+                        user_id=str(user.id), 
+                        client_id=str(user.client_id))
+        
+        return user
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("SSE authentication failed", error=str(e))
+        raise credentials_exception
+
+
+async def get_current_client_sse(
+    current_user: User = Depends(get_current_user_sse),
+    db: Session = Depends(get_db)
+) -> Client:
+    """Get current client from authenticated SSE user.
+    
+    Args:
+        current_user: Current authenticated user (from SSE)
+        db: Database session
+        
+    Returns:
+        Current client
+        
+    Raises:
+        HTTPException: If client not found
+    """
+    client = db.query(Client).filter(Client.id == current_user.client_id).first()
+    
+    if not client:
+        logger.error("SSE client not found", client_id=str(current_user.client_id))
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Client not found"
+        )
+    
+    return client
 
 
 def require_client_access(required_client_id: UUID):
