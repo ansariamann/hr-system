@@ -47,8 +47,12 @@ class ApplicationRepository(AuditedRepository[Application]):
         
         if not include_deleted:
             query = query.filter(Application.deleted_at.is_(None))
-        
-        return query.options(joinedload(Application.candidate)).all()
+
+        return (
+            query.options(joinedload(Application.candidate))
+            .order_by(Application.application_date.desc(), Application.created_at.desc())
+            .all()
+        )
     
     def get_by_status(
         self, 
@@ -82,7 +86,13 @@ class ApplicationRepository(AuditedRepository[Application]):
         if not include_deleted:
             query = query.filter(Application.deleted_at.is_(None))
         
-        return query.options(joinedload(Application.candidate)).offset(skip).limit(limit).all()
+        return (
+            query.options(joinedload(Application.candidate))
+            .order_by(Application.application_date.desc(), Application.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
     
     def get_flagged_applications(
         self, 
@@ -112,6 +122,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                 )
             )
             .options(joinedload(Application.candidate))
+            .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -264,6 +275,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                 )
             )
             .options(joinedload(Application.candidate))
+            .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -296,6 +308,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                 )
             )
             .options(joinedload(Application.candidate))
+            .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)
             .all()

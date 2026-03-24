@@ -1,5 +1,6 @@
 """Resume job management service."""
 
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
@@ -178,6 +179,7 @@ class ResumeJobService:
         self,
         db: Session,
         job_id: UUID,
+        client_id: UUID,
         status: str,
         error_message: Optional[str] = None,
         user_id: Optional[UUID] = None,
@@ -201,15 +203,19 @@ class ResumeJobService:
         try:
             job_data = ResumeJobUpdate(
                 status=status,
-                error_message=error_message
+                error_message=error_message,
+                processed_at=datetime.utcnow() if status in {"COMPLETED", "FAILED"} else None,
             )
             
             # Only update fields that are provided
             update_data = job_data.dict(exclude_unset=True)
+            if status in {"PENDING", "PROCESSING"}:
+                update_data["processed_at"] = None
             
             job = self.repository.update_with_audit(
                 db=db,
                 id=job_id,
+                client_id=client_id,
                 user_id=user_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
@@ -395,9 +401,7 @@ class ResumeJobService:
         Returns:
             List of resume jobs for the client
         """
-        return self.repository.get_multi(
-            db, skip, limit, {"client_id": client_id}
-        )
+        return self.repository.get_client_jobs(db, client_id, skip, limit)
     
     def delete_job(
         self,

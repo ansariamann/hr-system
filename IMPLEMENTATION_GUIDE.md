@@ -5,6 +5,8 @@
 I've successfully implemented all three major improvements to your candidate management interface:
 
 ---
+Admin Email: client.admin@amanasoft.com
+Admin Password: VF@2eJ#Apwvk
 
 ## 1. Data Integrity & Deduplication
 

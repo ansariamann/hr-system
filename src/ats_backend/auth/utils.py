@@ -71,14 +71,21 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     """Hash a password."""
-    pwd_context = get_pwd_context()
-    
     import hashlib
-    # Pre-hash with SHA-256 if password exceeds bcrypt's 72-byte limit
-    if len(password.encode('utf-8')) > 72:
-        password = hashlib.sha256(password.encode('utf-8')).hexdigest()
-    
-    return pwd_context.hash(password)
+
+    password_bytes = password.encode('utf-8')
+    if len(password_bytes) > 72:
+        password_bytes = hashlib.sha256(password_bytes).hexdigest().encode('utf-8')
+
+    try:
+        import bcrypt
+        salt = bcrypt.gensalt(rounds=4)
+        return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
+    except Exception as e:
+        logger.warning(f"Direct bcrypt hashing failed: {e}, attempting passlib fallback")
+        pwd_context = get_pwd_context()
+        fallback_password = password_bytes.decode('utf-8')
+        return pwd_context.hash(fallback_password)
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

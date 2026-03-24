@@ -53,7 +53,7 @@ class ResumeProcessingTask(Task):
                 try:
                     resume_job_service = ResumeJobService()
                     resume_job_service.update_job_status(
-                        db, UUID(job_id), "FAILED",
+                        db, UUID(job_id), UUID(client_id), "FAILED",
                         error_message=f"Task failed permanently: {str(exc)}",
                         user_id=UUID(user_id) if user_id else None
                     )
@@ -133,7 +133,7 @@ def process_resume_file(
             
             # Update job status to PROCESSING
             resume_job_service.update_job_status(
-                db, UUID(job_id), "PROCESSING", user_id=UUID(user_id) if user_id else None
+                db, UUID(job_id), UUID(client_id), "PROCESSING", user_id=UUID(user_id) if user_id else None
             )
             
             # Initialize resume parser
@@ -146,7 +146,7 @@ def process_resume_file(
             if not parsing_result.success:
                 # Update job with error
                 resume_job_service.update_job_status(
-                    db, UUID(job_id), "FAILED", 
+                    db, UUID(job_id), UUID(client_id), "FAILED",
                     error_message=parsing_result.error_message,
                     user_id=UUID(user_id) if user_id else None
                 )
@@ -247,7 +247,7 @@ def process_resume_file(
             
             # Update job status to COMPLETED
             resume_job_service.update_job_status(
-                db, UUID(job_id), "COMPLETED",
+                db, UUID(job_id), UUID(client_id), "COMPLETED",
                 user_id=UUID(user_id) if user_id else None
             )
             
@@ -299,7 +299,7 @@ def process_resume_file(
             try:
                 resume_job_service = ResumeJobService()
                 resume_job_service.update_job_status(
-                    db, UUID(job_id), "FAILED",
+                    db, UUID(job_id), UUID(client_id), "FAILED",
                     error_message=str(e),
                     user_id=UUID(user_id) if user_id else None
                 )
@@ -462,7 +462,7 @@ def reprocess_failed_resume(
             
             # Reset job status to PENDING for reprocessing
             resume_job_service.update_job_status(
-                db, UUID(job_id), "PENDING",
+                db, UUID(job_id), UUID(client_id), "PENDING",
                 error_message=None,  # Clear previous error
                 user_id=UUID(user_id) if user_id else None
             )

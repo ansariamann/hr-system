@@ -11,6 +11,7 @@ import structlog
 
 from .base import Base
 from ats_backend.core.custom_types import GUID
+from ats_backend.models.activity_log import ActivityLog
 
 logger = structlog.get_logger(__name__)
 
@@ -48,6 +49,44 @@ class AuditLog(Base):
 
 class AuditLogger:
     """Service for creating audit log entries."""
+
+    @staticmethod
+    def _to_activity_action_type(table_name: str, action: AuditAction) -> str:
+        entity = table_name.upper()
+        if entity.endswith("IES"):
+            entity = f"{entity[:-3]}Y"
+        elif entity.endswith("S"):
+            entity = entity[:-1]
+
+        action_suffix = {
+            AuditAction.CREATE: "CREATED",
+            AuditAction.UPDATE: "UPDATED",
+            AuditAction.DELETE: "DELETED",
+            AuditAction.SOFT_DELETE: "SOFT_DELETED",
+            AuditAction.RESTORE: "RESTORED",
+        }[action]
+        return f"{entity}_{action_suffix}"
+
+    @staticmethod
+    def _log_activity(
+        db: Session,
+        client_id: UUID,
+        table_name: str,
+        record_id: UUID,
+        action: AuditAction,
+        user_id: Optional[UUID] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> ActivityLog:
+        activity_log = ActivityLog(
+            client_id=client_id,
+            user_id=user_id,
+            action_type=AuditLogger._to_activity_action_type(table_name, action),
+            entity_id=record_id,
+            details=details or {},
+        )
+        db.add(activity_log)
+        db.flush()
+        return activity_log
     
     @staticmethod
     def log_create(
@@ -88,6 +127,19 @@ class AuditLogger:
         
         db.add(audit_log)
         db.flush()  # Flush without committing - let caller control transaction
+        AuditLogger._log_activity(
+            db=db,
+            client_id=client_id,
+            table_name=table_name,
+            record_id=record_id,
+            action=AuditAction.CREATE,
+            user_id=user_id,
+            details={
+                "table_name": table_name,
+                "audit_action": AuditAction.CREATE.value,
+                "new_values": new_values,
+            },
+        )
         
         logger.info(
             "Audit log created for CREATE",
@@ -152,6 +204,21 @@ class AuditLogger:
         
         db.add(audit_log)
         db.flush()  # Flush without committing - let caller control transaction
+        AuditLogger._log_activity(
+            db=db,
+            client_id=client_id,
+            table_name=table_name,
+            record_id=record_id,
+            action=AuditAction.UPDATE,
+            user_id=user_id,
+            details={
+                "table_name": table_name,
+                "audit_action": AuditAction.UPDATE.value,
+                "change_count": len(changes),
+                "changed_fields": sorted(changes.keys()),
+                "changes": changes,
+            },
+        )
         
         logger.info(
             "Audit log created for UPDATE",
@@ -203,6 +270,19 @@ class AuditLogger:
         
         db.add(audit_log)
         db.flush()  # Flush without committing - let caller control transaction
+        AuditLogger._log_activity(
+            db=db,
+            client_id=client_id,
+            table_name=table_name,
+            record_id=record_id,
+            action=AuditAction.DELETE,
+            user_id=user_id,
+            details={
+                "table_name": table_name,
+                "audit_action": AuditAction.DELETE.value,
+                "old_values": old_values,
+            },
+        )
         
         logger.info(
             "Audit log created for DELETE",
@@ -253,6 +333,19 @@ class AuditLogger:
         
         db.add(audit_log)
         db.flush()  # Flush without committing - let caller control transaction
+        AuditLogger._log_activity(
+            db=db,
+            client_id=client_id,
+            table_name=table_name,
+            record_id=record_id,
+            action=AuditAction.SOFT_DELETE,
+            user_id=user_id,
+            details={
+                "table_name": table_name,
+                "audit_action": AuditAction.SOFT_DELETE.value,
+                "old_values": old_values,
+            },
+        )
         
         logger.info(
             "Audit log created for SOFT_DELETE",
@@ -303,6 +396,19 @@ class AuditLogger:
         
         db.add(audit_log)
         db.flush()  # Flush without committing - let caller control transaction
+        AuditLogger._log_activity(
+            db=db,
+            client_id=client_id,
+            table_name=table_name,
+            record_id=record_id,
+            action=AuditAction.RESTORE,
+            user_id=user_id,
+            details={
+                "table_name": table_name,
+                "audit_action": AuditAction.RESTORE.value,
+                "new_values": new_values,
+            },
+        )
         
         logger.info(
             "Audit log created for RESTORE",

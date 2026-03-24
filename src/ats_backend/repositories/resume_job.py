@@ -5,7 +5,7 @@ from typing import Optional, List
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, desc
 import structlog
 
 from ats_backend.models.resume_job import ResumeJob
@@ -62,6 +62,24 @@ class ResumeJobRepository(AuditedRepository[ResumeJob]):
                     ResumeJob.status == status
                 )
             )
+            .order_by(desc(ResumeJob.created_at), desc(ResumeJob.id))
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    def get_client_jobs(
+        self,
+        db: Session,
+        client_id: UUID,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[ResumeJob]:
+        """Get recent resume jobs for a client."""
+        return (
+            db.query(ResumeJob)
+            .filter(ResumeJob.client_id == client_id)
+            .order_by(desc(ResumeJob.created_at), desc(ResumeJob.id))
             .offset(skip)
             .limit(limit)
             .all()
@@ -111,6 +129,7 @@ class ResumeJobRepository(AuditedRepository[ResumeJob]):
                     ResumeJob.status == "FAILED"
                 )
             )
+            .order_by(desc(ResumeJob.created_at), desc(ResumeJob.id))
             .offset(skip)
             .limit(limit)
             .all()

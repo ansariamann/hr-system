@@ -260,13 +260,24 @@ class SSEManager:
                 pubsub = self.redis_client.pubsub()
                 await pubsub.subscribe(channel)
                 
-                # Start heartbeat and event processing
-                heartbeat_task = asyncio.create_task(
-                    self._send_heartbeats(connection_id)
-                )
-                
                 try:
-                    async for message in pubsub.listen():
+                    while True:
+                        if await request.is_disconnected():
+                            break
+
+                        message = await pubsub.get_message(
+                            ignore_subscribe_messages=True,
+                            timeout=1.0,
+                        )
+
+                        current_time = time.time()
+                        if current_time - connection.last_heartbeat >= self.heartbeat_interval:
+                            yield self._heartbeat_payload(connection_id)
+                            connection.update_heartbeat()
+
+                        if not message:
+                            continue
+
                         if message["type"] == "message":
                             # Process event message
                             try:
@@ -326,7 +337,6 @@ class SSEManager:
                 
                 finally:
                     # Cleanup
-                    heartbeat_task.cancel()
                     await pubsub.unsubscribe(channel)
                     await pubsub.close()
                     
@@ -543,38 +553,14 @@ class SSEManager:
         
         return missed_events
     
-    async def _send_heartbeats(self, connection_id: str):
-        """Send periodic heartbeats to keep connection alive.
-        
-        Args:
-            connection_id: Connection ID
-        """
-        try:
-            while connection_id in self.active_connections:
-                connection = self.active_connections[connection_id]
-                if not connection.is_active:
-                    break
-                
-                # Send heartbeat
-                heartbeat_data = {
-                    "type": "heartbeat",
-                    "timestamp": time.time(),
-                    "connection_id": connection_id
-                }
-                
-                yield f"data: {json.dumps(heartbeat_data)}\n\n"
-                
-                connection.update_heartbeat()
-                await asyncio.sleep(self.heartbeat_interval)
-                
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(
-                "Heartbeat error",
-                connection_id=connection_id,
-                error=str(e)
-            )
+    def _heartbeat_payload(self, connection_id: str) -> str:
+        """Build a heartbeat payload for an active SSE connection."""
+        heartbeat_data = {
+            "type": "heartbeat",
+            "timestamp": time.time(),
+            "connection_id": connection_id,
+        }
+        return f"data: {json.dumps(heartbeat_data)}\n\n"
     
     async def _cleanup_connection(self, connection_id: str):
         """Clean up a disconnected connection.

@@ -125,6 +125,17 @@ async def ingest_email(
             jobs_created=len(result.job_ids)
         )
         
+        from ats_backend.models.activity_log import ActivityLog
+        activity_log = ActivityLog(
+            client_id=current_client.id,
+            user_id=current_user.id,
+            action_type="RESUME_PROCESSING_STARTED",
+            entity_id=None,
+            details={"message_id": email_request.email.message_id, "jobs_created": len(result.job_ids)}
+        )
+        db.add(activity_log)
+        db.commit()
+        
         return result
         
     except HTTPException:

@@ -18,14 +18,17 @@ from ats_backend.auth.dependencies import get_current_user, get_current_client, 
 from ats_backend.auth.models import User
 from ats_backend.models.candidate import Candidate
 from ats_backend.models.client import Client
+from ats_backend.models.application import Application
 from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.candidate_service import CandidateService
 from ats_backend.services.interview_service import InterviewService
+from ats_backend.services.resume_job_service import ResumeJobService
 from ats_backend.schemas.candidate import (
     CandidateCreate,
     CandidateUpdate,
     CandidateResponse
 )
+from ats_backend.schemas.resume_job import ResumeJobCreate
 
 from ats_backend.resume.parser import ResumeParser
 from ats_backend.core.config import settings
@@ -60,6 +63,48 @@ def _infer_company_from_payload(payload: Dict[str, Any]) -> Optional[str]:
         return infer_company(payload.get("previous_employment"))
     except Exception:
         return None
+
+
+def _resolve_candidate_for_client_access(
+    db: Session,
+    candidate_id: UUID,
+    current_client: Client,
+) -> Optional[Candidate]:
+    """Resolve a candidate for client-facing actions.
+
+    Prefer a direct candidate tenant match, but fall back to an active application
+    under the current client for legacy records created with mismatched candidate
+    ownership. This keeps existing client-portal workflows working while stricter
+    validation prevents new inconsistent records.
+    """
+    candidate_service = CandidateService()
+    candidate = candidate_service.get_candidate_by_id_for_client(
+        db, candidate_id, current_client.id
+    )
+    if candidate:
+        return candidate
+
+    application = (
+        db.query(Application)
+        .filter(
+            Application.client_id == current_client.id,
+            Application.candidate_id == candidate_id,
+            Application.deleted_at.is_(None),
+        )
+        .order_by(Application.created_at.desc())
+        .first()
+    )
+    if not application or not application.candidate:
+        return None
+
+    logger.warning(
+        "Resolved candidate via application fallback due to tenant mismatch",
+        candidate_id=str(candidate_id),
+        application_id=str(application.id),
+        application_client_id=str(application.client_id),
+        candidate_client_id=str(application.candidate.client_id),
+    )
+    return application.candidate
 
 
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
@@ -112,9 +157,12 @@ async def create_candidate(
                 name=candidate.name
             )
             
+            db.commit()
+            
             return candidate
             
     except ValueError as e:
+        db.rollback()
         logger.warning(
             "Candidate creation failed - validation error",
             client_id=str(current_client.id),
@@ -126,6 +174,7 @@ async def create_candidate(
             detail=str(e)
         )
     except Exception as e:
+        db.rollback()
         logger.error(
             "Candidate creation failed - internal error",
             client_id=str(current_client.id),
@@ -153,6 +202,7 @@ async def upload_resume(
     """
     temp_file_path = None
     keep_uploaded_file = False
+    resume_job = None
     try:
         with performance_logger.log_operation_time(
             "upload_resume",
@@ -217,6 +267,21 @@ async def upload_resume(
             # Get request metadata
             ip_address = request.client.host if request.client else None
             user_agent = request.headers.get("user-agent")
+            resume_job_service = ResumeJobService()
+
+            resume_job = resume_job_service.create_resume_job(
+                db=db,
+                client_id=current_client.id,
+                job_data=ResumeJobCreate(
+                    file_name=file.filename,
+                    file_path=str(temp_file_path),
+                    status="PROCESSING",
+                ),
+                user_id=current_user.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            db.commit()
             
             # Create candidate
             candidate_service = CandidateService()
@@ -249,9 +314,44 @@ async def upload_resume(
             db.add(activity_log)
             db.commit()
             
+            activity_log = ActivityLog(
+                client_id=current_client.id,
+                user_id=current_user.id,
+                action_type="CANDIDATE_UPLOADED",
+                entity_id=candidate.id,
+                details={"name": candidate.name, "file_name": file.filename, "source": "resume_upload"}
+            )
+            db.add(activity_log)
+
+            resume_job_service.update_job_status(
+                db=db,
+                job_id=resume_job.id,
+                client_id=current_client.id,
+                status="COMPLETED",
+                user_id=current_user.id,
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            db.commit()
+            
             return candidate
             
     except Exception as e:
+        db.rollback()
+        if resume_job is not None:
+            try:
+                resume_job_service = ResumeJobService()
+                resume_job_service.update_job_status(
+                    db=db,
+                    job_id=resume_job.id,
+                    client_id=current_client.id,
+                    status="FAILED",
+                    error_message=str(e),
+                    user_id=current_user.id,
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
         logger.error(
             "Resume upload failed",
             client_id=str(current_client.id),
@@ -383,9 +483,10 @@ async def get_candidate(
             client_id=str(current_client.id),
             candidate_id=str(candidate_id)
         ):
-            candidate_service = CandidateService()
-            candidate = candidate_service.get_candidate_by_id_for_client(
-                db, candidate_id, current_client.id
+            candidate = _resolve_candidate_for_client_access(
+                db=db,
+                candidate_id=candidate_id,
+                current_client=current_client,
             )
             
             if not candidate:
@@ -394,7 +495,11 @@ async def get_candidate(
                     detail="Candidate not found"
                 )
 
-            if _is_client_scoped_user(current_user) and candidate.assigned_user_id != current_user.id:
+            if (
+                _is_client_scoped_user(current_user)
+                and candidate.client_id == current_client.id
+                and candidate.assigned_user_id != current_user.id
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Candidate not found"
@@ -628,9 +733,10 @@ async def get_candidate_timeline(
     """
     from ats_backend.models.fsm_transition_log import FSMTransitionLog
 
-    candidate_service = CandidateService()
-    candidate = candidate_service.get_candidate_by_id_for_client(
-        db, candidate_id, current_client.id
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
     )
     if not candidate:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
@@ -963,6 +1069,8 @@ class LeftCompanyPayload(BaseModel):
 class DirectInterviewPayload(BaseModel):
     """Payload for recording a direct interview with a candidate."""
     interview_date: datetime
+    position: Optional[str] = None
+    skills: Optional[List[str]] = None
     notes: Optional[str] = None
     rating: Optional[int] = None  # 1-5 scale
     company_id: UUID  # Target company for candidate placement
@@ -988,6 +1096,14 @@ class DirectInterviewPayload(BaseModel):
             raise ValueError("Rating must be between 1 and 5")
         return v
 
+    @field_validator('skills')
+    @classmethod
+    def validate_skills(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return v
+        normalized = [skill.strip() for skill in v if isinstance(skill, str) and skill.strip()]
+        return normalized
+
 
 class DirectSelectPayload(BaseModel):
     """Payload for selecting a candidate via direct interview and adding to company pool."""
@@ -998,6 +1114,8 @@ class DirectSelectPayload(BaseModel):
 class UpdateInterviewPayload(BaseModel):
     """Payload for updating an interview record."""
     interview_date: Optional[datetime] = None
+    position: Optional[str] = None
+    skills: Optional[List[str]] = None
     notes: Optional[str] = None
     rating: Optional[int] = None
     company_id: Optional[UUID] = None
@@ -1023,6 +1141,14 @@ class UpdateInterviewPayload(BaseModel):
             raise ValueError("Rating must be between 1 and 5")
         return v
 
+    @field_validator('skills')
+    @classmethod
+    def validate_skills(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return v
+        normalized = [skill.strip() for skill in v if isinstance(skill, str) and skill.strip()]
+        return normalized
+
 
 class InterviewRecordResponse(BaseModel):
     """Response schema for interview records."""
@@ -1032,6 +1158,8 @@ class InterviewRecordResponse(BaseModel):
     company_id: UUID
     interviewer_id: UUID
     interview_date: datetime
+    position: Optional[str] = None
+    skills: Optional[List[str]] = None
     notes: Optional[str] = None
     rating: Optional[int] = None
     created_at: datetime
@@ -1103,8 +1231,11 @@ async def schedule_interview(
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client),
 ):
-    candidate_service = CandidateService()
-    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -1132,8 +1263,11 @@ async def select_candidate(
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client),
 ):
-    candidate_service = CandidateService()
-    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -1199,6 +1333,8 @@ async def record_direct_interview(
                 company_id=payload.company_id,
                 interviewer_id=current_user.id,
                 interview_date=payload.interview_date,
+                position=payload.position,
+                skills=payload.skills,
                 notes=payload.notes,
                 rating=payload.rating,
                 log_activity=True,
@@ -1503,6 +1639,8 @@ async def update_interview_record(
                 editor_id=current_user.id,
                 interview_date=payload.interview_date,
                 company_id=payload.company_id,
+                position=payload.position,
+                skills=payload.skills,
                 notes=payload.notes,
                 rating=payload.rating,
                 log_activity=True,
@@ -1651,8 +1789,11 @@ async def reject_candidate(
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client),
 ):
-    candidate_service = CandidateService()
-    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -1673,8 +1814,11 @@ async def submit_feedback(
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client),
 ):
-    candidate_service = CandidateService()
-    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
@@ -1702,8 +1846,11 @@ async def left_company(
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client),
 ):
-    candidate_service = CandidateService()
-    candidate = candidate_service.get_candidate_by_id_for_client(db, candidate_id, current_client.id)
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 

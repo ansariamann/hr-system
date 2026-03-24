@@ -18,6 +18,13 @@ class InterviewService:
     """Service for managing candidate interview records."""
 
     @staticmethod
+    def normalize_skills(skills: Optional[List[str]]) -> Optional[List[str]]:
+        if skills is None:
+            return None
+        normalized = [skill.strip() for skill in skills if isinstance(skill, str) and skill.strip()]
+        return normalized or []
+
+    @staticmethod
     def normalize_interview_datetime(value: datetime) -> datetime:
         """Store datetimes as naive UTC consistently."""
         if value.tzinfo is not None:
@@ -69,6 +76,8 @@ class InterviewService:
         company_id: UUID,
         interviewer_id: UUID,
         interview_date: datetime,
+        position: Optional[str] = None,
+        skills: Optional[List[str]] = None,
         notes: Optional[str] = None,
         rating: Optional[int] = None,
         log_activity: bool = False,
@@ -118,6 +127,8 @@ class InterviewService:
                 company_id=company_id,
                 interviewer_id=interviewer_id,
                 interview_date=normalized_date,
+                position=position.strip() if position else None,
+                skills=self.normalize_skills(skills),
                 notes=notes,
                 rating=rating
             )
@@ -139,6 +150,8 @@ class InterviewService:
                         details={
                             "company_id": str(company_id),
                             "interview_date": normalized_date.isoformat(),
+                            "position": position,
+                            "skills": self.normalize_skills(skills),
                             "rating": rating,
                         },
                     )
@@ -178,6 +191,8 @@ class InterviewService:
         editor_id: UUID,
         interview_date: Optional[datetime] = None,
         company_id: Optional[UUID] = None,
+        position: Optional[str] = None,
+        skills: Optional[List[str]] = None,
         notes: Optional[str] = None,
         rating: Optional[int] = None,
         log_activity: bool = False,
@@ -212,6 +227,10 @@ class InterviewService:
             interview.interview_date = normalized_date
         if company_id is not None:
             interview.company_id = company_id
+        if position is not None:
+            interview.position = position.strip() or None
+        if skills is not None:
+            interview.skills = self.normalize_skills(skills)
         interview.notes = notes
         interview.rating = rating
         interview.updated_at = datetime.utcnow()
@@ -230,6 +249,8 @@ class InterviewService:
                         "interview_id": str(interview.id),
                         "company_id": str(interview.company_id),
                         "interview_date": interview.interview_date.isoformat(),
+                        "position": interview.position,
+                        "skills": interview.skills,
                         "rating": interview.rating,
                     },
                 )

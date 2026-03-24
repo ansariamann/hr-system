@@ -13,6 +13,12 @@ logger = structlog.get_logger(__name__)
 
 class SessionContextManager:
     """Manages database session context for RLS policies."""
+
+    @staticmethod
+    def _supports_rls_context(session: Session) -> bool:
+        bind = session.get_bind() if hasattr(session, "get_bind") else session.bind
+        dialect_name = getattr(getattr(bind, "dialect", None), "name", None)
+        return dialect_name == "postgresql"
     
     @staticmethod
     def set_client_context(session: Session, client_id: UUID) -> None:
@@ -27,6 +33,10 @@ class SessionContextManager:
         """
         if client_id is None:
             raise ValueError("Client ID cannot be None")
+
+        if not SessionContextManager._supports_rls_context(session):
+            logger.debug("Skipping client context set for non-PostgreSQL session", client_id=str(client_id))
+            return
         
         try:
             session.execute(
@@ -45,6 +55,9 @@ class SessionContextManager:
         Args:
             session: Database session
         """
+        if not SessionContextManager._supports_rls_context(session):
+            return
+
         try:
             session.execute(text("SET LOCAL app.current_client_id = ''"))
             logger.debug("Client context cleared")
@@ -62,6 +75,9 @@ class SessionContextManager:
         Returns:
             Current client UUID or None if not set
         """
+        if not SessionContextManager._supports_rls_context(session):
+            return None
+
         try:
             result = session.execute(
                 text("SELECT current_setting('app.current_client_id', true)")

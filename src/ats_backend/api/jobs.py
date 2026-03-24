@@ -12,6 +12,7 @@ from ats_backend.core.session_context import set_client_context
 from ats_backend.auth.dependencies import get_current_user
 from ats_backend.auth.models import User
 from ats_backend.models.job import Job
+from ats_backend.models.activity_log import ActivityLog
 from ats_backend.schemas.job import JobCreate, JobUpdate, JobResponse
 from ats_backend.services.job_service import JobService
 
@@ -96,6 +97,15 @@ def create_job(
 
     service = JobService()
     job = service.create_job(db, job)
+    
+    activity_log = ActivityLog(
+        client_id=client_id,
+        user_id=current_user.id,
+        action_type="JOB_CREATED",
+        entity_id=job.id,
+        details={"title": job.title, "company_name": job.company_name}
+    )
+    db.add(activity_log)
     db.commit()
     db.refresh(job)
     return job
@@ -137,7 +147,40 @@ def update_job(
         raise HTTPException(status_code=404, detail="Job not found")
 
     updates = payload.dict(exclude_unset=True)
+    previous_values = {
+        "title": job.title,
+        "company_name": job.company_name,
+        "posting_date": job.posting_date.isoformat() if job.posting_date else None,
+        "requirements": job.requirements,
+        "experience_required": job.experience_required,
+        "salary_lpa": float(job.salary_lpa) if job.salary_lpa is not None else None,
+        "location": job.location,
+    }
     job = JobService.update_job(db, job, updates)
+    updated_values = {
+        "title": job.title,
+        "company_name": job.company_name,
+        "posting_date": job.posting_date.isoformat() if job.posting_date else None,
+        "requirements": job.requirements,
+        "experience_required": job.experience_required,
+        "salary_lpa": float(job.salary_lpa) if job.salary_lpa is not None else None,
+        "location": job.location,
+    }
+    changed_fields = sorted(
+        key for key, old_value in previous_values.items() if old_value != updated_values.get(key)
+    )
+    activity_log = ActivityLog(
+        client_id=job.client_id,
+        user_id=current_user.id,
+        action_type="JOB_UPDATED",
+        entity_id=job.id,
+        details={
+            "changed_fields": changed_fields,
+            "previous_values": previous_values,
+            "updated_values": updated_values,
+        }
+    )
+    db.add(activity_log)
     db.commit()
     db.refresh(job)
     return job
@@ -164,4 +207,13 @@ def delete_job(
         raise HTTPException(status_code=404, detail="Job not found")
 
     JobService.delete_job(db, job)
+    
+    activity_log = ActivityLog(
+        client_id=job.client_id,
+        user_id=current_user.id,
+        action_type="JOB_DELETED",
+        entity_id=job_id,
+        details={"job_id": str(job_id), "title": job.title, "company_name": job.company_name}
+    )
+    db.add(activity_log)
     db.commit()

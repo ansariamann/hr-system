@@ -1,12 +1,12 @@
 """Authentication API endpoints."""
 
-import logging
 from datetime import datetime, timedelta
 import hashlib
 import secrets
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from ats_backend.core.config import settings
@@ -29,6 +29,7 @@ from ats_backend.auth.models import (
     RoleValidationResponse,
 )
 from ats_backend.auth.utils import (
+    authenticate_user,
     create_access_token,
     create_user,
     get_password_hash,
@@ -37,8 +38,11 @@ from ats_backend.auth.utils import (
 )
 from ats_backend.email.send import send_email
 from ats_backend.email.templates import render_password_reset_email
+from ats_backend.models.activity_log import ActivityLog
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+CLIENT_ROLES = {"client_admin", "client_user"}
 
 
 def _extract_email_domain(email: str) -> str:
@@ -67,6 +71,66 @@ def _can_assign_role(
             return False
         return role in {"client_user", "client_admin"}
     return False
+
+
+def _require_client_user(user: User) -> User:
+    role = (user.role or "").lower()
+    if role not in CLIENT_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Client access is only available to client users",
+        )
+    return user
+
+
+@router.post("/client/login", response_model=Token)
+@with_error_handling(component="authentication")
+def client_login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+):
+    """Authenticate a client portal user and return an access token."""
+    user = authenticate_user(
+        db,
+        form_data.username.strip().lower(),
+        form_data.password,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+        )
+
+    _require_client_user(user)
+
+    access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "client_id": str(user.client_id),
+            "email": user.email,
+            "role": user.role,
+        },
+        expires_delta=access_token_expires,
+    )
+
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=settings.access_token_expire_minutes * 60,
+    )
+
+
+@router.get("/client/me", response_model=UserResponse)
+@with_error_handling(component="authentication")
+def get_current_client_user_info(
+    current_user: User = Depends(get_current_user),
+):
+    """Return current user info for client-portal sessions only."""
+    return _require_client_user(current_user)
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -304,6 +368,15 @@ def change_password(
 
     set_client_context(db, user.client_id)
     user.hashed_password = get_password_hash(payload.new_password)
+    db.add(
+        ActivityLog(
+            client_id=user.client_id,
+            user_id=user.id,
+            action_type="PASSWORD_CHANGED",
+            entity_id=user.id,
+            details={"email": user.email},
+        )
+    )
     db.commit()
 
     return {"status": "ok"}

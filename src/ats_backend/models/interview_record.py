@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import Column, String, DateTime, ForeignKey, Integer, Text, JSON
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
@@ -21,6 +21,8 @@ class InterviewRecord(Base):
     company_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
     interviewer_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
     interview_date = Column(DateTime, nullable=False)
+    position = Column(String(255), nullable=True)
+    skills = Column(JSON, nullable=True)
     notes = Column(Text, nullable=True)
     rating = Column(Integer, nullable=True)  # 1-5 scale
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

@@ -13,6 +13,7 @@ from ats_backend.models.client import Client
 from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.application_service import ApplicationService
 from ats_backend.services.client_service import ClientService
+from ats_backend.core.session_context import with_client_context
 from ats_backend.schemas.application import (
     ApplicationCreate,
     ApplicationUpdate,
@@ -23,6 +24,8 @@ from ats_backend.core.logging import performance_logger
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/applications", tags=["applications"])
+
+HR_PRIVILEGED_ROLES = {"hr_admin", "hr_recruiter", "hr_user"}
 
 
 @router.post("", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
@@ -49,46 +52,47 @@ async def create_application(
             user_agent = request.headers.get("user-agent")
             
             application_service = ApplicationService()
-            target_client_id = application_data.client_id or current_client.id
-            target_client = ClientService.get_client_by_id(db, target_client_id)
+            user_role = (current_user.role or "").strip().lower()
+            requested_client_id = application_data.client_id or current_client.id
+
+            if user_role not in HR_PRIVILEGED_ROLES and requested_client_id != current_client.id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Applications can only be created for the authenticated client"
+                )
+
+            target_client = ClientService.get_client_by_id(db, requested_client_id)
             if not target_client:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Target client not found"
                 )
 
-            application = application_service.create_application(
-                db=db,
-                client_id=target_client_id,
-                application_data=application_data,
-                user_id=current_user.id,
-                ip_address=ip_address,
-                user_agent=user_agent
-            )
+            with with_client_context(db, target_client.id):
+                application = application_service.create_application(
+                    db=db,
+                    client_id=target_client.id,
+                    application_data=application_data,
+                    user_id=current_user.id,
+                    ip_address=ip_address,
+                    user_agent=user_agent
+                )
             
             logger.info(
                 "Application created via API",
                 application_id=str(application.id),
-                client_id=str(target_client_id),
+                client_id=str(target_client.id),
                 user_id=str(current_user.id),
                 candidate_id=str(application.candidate_id),
                 status=application.status
             )
             
-            # Record activity log
-            activity_log = ActivityLog(
-                client_id=target_client_id,
-                user_id=current_user.id,
-                action_type="APPLICATION_CREATED",
-                entity_id=application.id,
-                details={"candidate_id": str(application.candidate_id), "job_id": str(application.job_id)}
-            )
-            db.add(activity_log)
             db.commit()
             
             return application
             
     except ValueError as e:
+        db.rollback()
         logger.warning(
             "Application creation failed - validation error",
             client_id=str(current_client.id),
@@ -100,6 +104,7 @@ async def create_application(
             detail=str(e)
         )
     except Exception as e:
+        db.rollback()
         logger.error(
             "Application creation failed - internal error",
             client_id=str(current_client.id),
@@ -537,6 +542,17 @@ async def flag_application(
                 user_id=str(current_user.id),
                 flag_reason=flag_reason
             )
+
+            db.add(
+                ActivityLog(
+                    client_id=current_client.id,
+                    user_id=current_user.id,
+                    action_type="APPLICATION_FLAGGED",
+                    entity_id=application_id,
+                    details={"flag_reason": flag_reason},
+                )
+            )
+            db.commit()
             
             return {
                 "success": True,
@@ -606,6 +622,17 @@ async def unflag_application(
                 client_id=str(current_client.id),
                 user_id=str(current_user.id)
             )
+
+            db.add(
+                ActivityLog(
+                    client_id=current_client.id,
+                    user_id=current_user.id,
+                    action_type="APPLICATION_UNFLAGGED",
+                    entity_id=application_id,
+                    details={},
+                )
+            )
+            db.commit()
             
             return {
                 "success": True,

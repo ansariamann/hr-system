@@ -1,5 +1,8 @@
 """Audited base repository with automatic audit logging."""
 
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
 from typing import Generic, TypeVar, Type, Optional, Dict, Any
 from uuid import UUID
 
@@ -28,6 +31,25 @@ class AuditedRepository(BaseRepository[ModelType]):
         super().__init__(model)
         self.audit_logger = AuditLogger()
     
+    def _make_json_safe(self, value: Any) -> Any:
+        """Convert nested model values into JSON-serializable primitives."""
+        if isinstance(value, UUID):
+            return str(value)
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {
+                str(key): self._make_json_safe(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [self._make_json_safe(item) for item in value]
+        return value
+
     def _model_to_dict(self, instance: ModelType) -> Dict[str, Any]:
         """Convert model instance to dictionary for audit logging.
         
@@ -40,12 +62,7 @@ class AuditedRepository(BaseRepository[ModelType]):
         result = {}
         for column in inspect(instance).mapper.column_attrs:
             value = getattr(instance, column.key)
-            # Convert UUID and datetime to string for JSON serialization
-            if isinstance(value, UUID):
-                value = str(value)
-            elif hasattr(value, 'isoformat'):  # datetime objects
-                value = value.isoformat()
-            result[column.key] = value
+            result[column.key] = self._make_json_safe(value)
         return result
     
     def create_with_audit(

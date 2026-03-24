@@ -1,6 +1,6 @@
 """Celery application configuration with comprehensive error handling."""
 
-from celery import Celery
+from celery import Celery, __version__ as celery_version
 from celery.signals import task_prerun, task_postrun, task_failure, task_retry, worker_ready, worker_shutdown
 import structlog
 from datetime import datetime
@@ -226,9 +226,8 @@ def worker_ready_handler(sender=None, **kwds):
     """Log worker ready with system information."""
     worker_info = {
         "worker_hostname": sender.hostname if sender else "unknown",
-        "timestamp": datetime.utcnow().isoformat(),
         "python_version": sys.version,
-        "celery_version": celery_app.version
+        "celery_version": celery_version,
     }
     
     system_logger.log_system_startup(
@@ -244,7 +243,6 @@ def worker_shutdown_handler(sender=None, **kwds):
     """Log worker shutdown."""
     worker_info = {
         "worker_hostname": sender.hostname if sender else "unknown",
-        "timestamp": datetime.utcnow().isoformat()
     }
     
     system_logger.log_system_shutdown(

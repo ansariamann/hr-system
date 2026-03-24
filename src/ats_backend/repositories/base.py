@@ -124,7 +124,7 @@ class BaseRepository(Generic[ModelType]):
         
         try:
             for field, value in kwargs.items():
-                if hasattr(instance, field) and value is not None:
+                if hasattr(instance, field):
                     setattr(instance, field, value)
             
             db.flush()  # Flush changes without committing

@@ -9,6 +9,7 @@ import structlog
 
 from ats_backend.models.application import Application
 from ats_backend.repositories.application import ApplicationRepository
+from ats_backend.repositories.candidate import CandidateRepository
 from ats_backend.schemas.application import ApplicationCreate, ApplicationUpdate
 from ats_backend.core.event_publisher import event_publisher
 
@@ -47,6 +48,13 @@ class ApplicationService:
             ValueError: If application creation fails
         """
         try:
+            candidate_repo = CandidateRepository()
+            candidate = candidate_repo.get_by_id_for_client(
+                db, application_data.candidate_id, client_id
+            )
+            if not candidate:
+                raise ValueError("Candidate not found for the selected client")
+
             application = self.repository.create_with_audit(
                 db=db,
                 client_id=client_id,
@@ -73,7 +81,6 @@ class ApplicationService:
                         candidate_name = application.candidate.name
                     else:
                         # Fallback: query candidate separately
-                        from ats_backend.repositories.candidate import CandidateRepository
                         candidate_repo = CandidateRepository()
                         candidate = candidate_repo.get_by_id(db, application.candidate_id)
                         if candidate:
@@ -428,7 +435,6 @@ class ApplicationService:
                         candidate_name = application.candidate.name
                     else:
                         # Fallback: query candidate separately
-                        from ats_backend.repositories.candidate import CandidateRepository
                         candidate_repo = CandidateRepository()
                         candidate = candidate_repo.get_by_id(db, application.candidate_id)
                         if candidate:

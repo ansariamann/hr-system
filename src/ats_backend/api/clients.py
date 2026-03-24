@@ -9,6 +9,7 @@ from ats_backend.core.error_handling import with_error_handling
 from ats_backend.auth.dependencies import get_current_user
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
+from ats_backend.models.activity_log import ActivityLog
 from ats_backend.schemas.client import ClientCreate, ClientUpdate, ClientResponse, ClientProvisionResponse
 from ats_backend.services.client_service import ClientService
 
@@ -56,6 +57,17 @@ def create_client(
     )
     db.commit()
     db.refresh(new_client)
+    
+    activity_log = ActivityLog(
+        client_id=current_user.client_id,
+        user_id=current_user.id,
+        action_type="CLIENT_CREATED",
+        entity_id=new_client.id,
+        details={"name": new_client.name, "email_domain": new_client.email_domain}
+    )
+    db.add(activity_log)
+    db.commit()
+    
     return ClientProvisionResponse(
         id=new_client.id,
         name=new_client.name,
@@ -96,12 +108,36 @@ def update_client(
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
         
+    previous_values = {
+        "name": client.name,
+        "email_domain": client.email_domain,
+    }
+
     updated_client = ClientService.update_client(
         db, 
         client_id, 
         name=client_in.name, 
         email_domain=client_in.email_domain
     )
+    updated_values = {
+        "name": updated_client.name,
+        "email_domain": updated_client.email_domain,
+    }
+    changed_fields = sorted(
+        key for key, old_value in previous_values.items() if old_value != updated_values.get(key)
+    )
+    activity_log = ActivityLog(
+        client_id=current_user.client_id,
+        user_id=current_user.id,
+        action_type="CLIENT_UPDATED",
+        entity_id=updated_client.id,
+        details={
+            "changed_fields": changed_fields,
+            "previous_values": previous_values,
+            "updated_values": updated_values,
+        }
+    )
+    db.add(activity_log)
     db.commit()
     db.refresh(updated_client)
     return updated_client
@@ -119,6 +155,15 @@ def delete_client(
     success = ClientService.delete_client(db, client_id)
     if not success:
         raise HTTPException(status_code=404, detail="Client not found")
+    if current_user.client_id != client_id:
+        activity_log = ActivityLog(
+            client_id=current_user.client_id,
+            user_id=current_user.id,
+            action_type="CLIENT_DELETED",
+            entity_id=client_id,
+            details={"client_id": str(client_id)}
+        )
+        db.add(activity_log)
     db.commit()
 
 

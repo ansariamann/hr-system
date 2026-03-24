@@ -1,7 +1,7 @@
 """Activity Log API endpoints."""
 
 from typing import List
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -23,16 +23,38 @@ router = APIRouter(prefix="/activity-logs", tags=["activity-logs"])
 async def get_activity_logs(
     limit: int = 100,
     skip: int = 0,
+    start_date: date | None = None,
+    end_date: date | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     current_client: Client = Depends(get_current_client)
 ):
     """Get activity logs for the current client, ordered by newest first."""
-    logs = (
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date cannot be after end_date",
+        )
+
+    query = (
         db.query(ActivityLog)
         .outerjoin(User, ActivityLog.user_id == User.id)
         .filter(ActivityLog.client_id == current_client.id)
-        .order_by(desc(ActivityLog.created_at))
+    )
+
+    if start_date:
+        query = query.filter(
+            ActivityLog.created_at >= datetime.combine(start_date, time.min)
+        )
+
+    if end_date:
+        query = query.filter(
+            ActivityLog.created_at <= datetime.combine(end_date, time.max)
+        )
+
+    logs = (
+        query
+        .order_by(desc(ActivityLog.created_at), desc(ActivityLog.id))
         .offset(skip)
         .limit(limit)
         .all()

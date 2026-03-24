@@ -82,6 +82,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=self._get_http_status_code(e),
                 content={
+                    "detail": e.message,
                     "error": {
                         "message": e.message,
                         "category": e.category.value,
@@ -296,7 +297,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 @app.get("/health", tags=["monitoring/observability"])
 def health_check():
     """Health check endpoint for container orchestration systems."""
-    return {"status": "healthy"}
+    return {"status": "healthy", "service": "ats-backend"}
 
 # Include API routers
 app.include_router(email_router)
