@@ -86,6 +86,10 @@ celery_app.conf.update(
             'schedule': 86400.0,  # Daily
             'kwargs': {'days_old': 30}
         },
+        'poll-imap-inbox': {
+            'task': 'poll_imap_inbox',
+            'schedule': float(settings.imap_poll_interval_seconds),
+        },
         'cleanup-failed-jobs': {
             'task': 'cleanup_failed_jobs_all_clients',
             'schedule': 3600.0,  # Hourly

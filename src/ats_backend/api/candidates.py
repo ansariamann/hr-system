@@ -1039,6 +1039,57 @@ async def get_candidate_statistics(
         )
 
 
+@router.get("/statistics")
+async def get_candidate_statistics_alias(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client)
+):
+    """Alias for /stats/summary (frontend compatibility)."""
+    return await get_candidate_statistics(
+        db=db, current_user=current_user, current_client=current_client
+    )
+
+
+@router.get("/{candidate_id}/applications")
+async def get_candidate_applications(
+    candidate_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    """Get all applications for a specific candidate."""
+    candidate = _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Candidate not found",
+        )
+
+    applications = (
+        db.query(Application)
+        .filter(
+            Application.client_id == current_client.id,
+            Application.candidate_id == candidate_id,
+            Application.deleted_at.is_(None),
+        )
+        .order_by(Application.created_at.desc())
+        .all()
+    )
+
+    logger.info(
+        "Candidate applications retrieved",
+        candidate_id=str(candidate_id),
+        client_id=str(current_client.id),
+        count=len(applications),
+    )
+    return applications
+
+
 # ---------------------------------------------------------------------------
 # Action Payloads & Endpoints
 # ---------------------------------------------------------------------------
@@ -1177,11 +1228,28 @@ def _log_transition(
     client: Client,
     reason: str,
     terminal: bool = False,
+    application_status: Optional[str] = None,
 ):
     from ats_backend.models.fsm_transition_log import FSMTransitionLog, ActorType
     old_status = candidate.status
     candidate.status = new_status
     candidate.updated_at = datetime.utcnow()
+
+    if application_status:
+        latest_application = (
+            db.query(Application)
+            .filter(
+                Application.client_id == client.id,
+                Application.candidate_id == candidate.id,
+                Application.deleted_at.is_(None),
+            )
+            .order_by(Application.created_at.desc())
+            .first()
+        )
+        if latest_application:
+            latest_application.status = application_status
+            latest_application.status_updated_at = datetime.utcnow()
+            latest_application.updated_at = datetime.utcnow()
 
     log = FSMTransitionLog(
         candidate_id=candidate.id,
@@ -1250,7 +1318,15 @@ async def schedule_interview(
         reason_parts.append(f"Notes: {payload.notes}")
     reason = " | ".join(reason_parts)
 
-    candidate = _log_transition(db, candidate, "INTERVIEW_SCHEDULED", current_user, current_client, reason)
+    candidate = _log_transition(
+        db,
+        candidate,
+        "INTERVIEW_SCHEDULED",
+        current_user,
+        current_client,
+        reason,
+        application_status="INTERVIEW_SCHEDULED",
+    )
     logger.info("Interview scheduled", candidate_id=str(candidate.id), client_id=str(current_client.id))
     return candidate
 
@@ -1275,7 +1351,15 @@ async def select_candidate(
     if payload.notes:
         reason += f" | Notes: {payload.notes}"
 
-    candidate = _log_transition(db, candidate, "SELECTED", current_user, current_client, reason)
+    candidate = _log_transition(
+        db,
+        candidate,
+        "SELECTED",
+        current_user,
+        current_client,
+        reason,
+        application_status="HIRED",
+    )
     logger.info("Candidate selected", candidate_id=str(candidate.id), client_id=str(current_client.id))
     return candidate
 
@@ -1801,7 +1885,16 @@ async def reject_candidate(
     if payload.feedback:
         reason += f" | Feedback: {payload.feedback}"
 
-    candidate = _log_transition(db, candidate, "REJECTED", current_user, current_client, reason, terminal=True)
+    candidate = _log_transition(
+        db,
+        candidate,
+        "REJECTED",
+        current_user,
+        current_client,
+        reason,
+        terminal=True,
+        application_status="REJECTED",
+    )
     logger.info("Candidate rejected", candidate_id=str(candidate.id), client_id=str(current_client.id))
     return candidate
 
@@ -1858,7 +1951,16 @@ async def left_company(
     if payload.reason:
         reason += f" | Reason: {payload.reason}"
 
-    candidate = _log_transition(db, candidate, "LEFT_COMPANY", current_user, current_client, reason, terminal=True)
+    candidate = _log_transition(
+        db,
+        candidate,
+        "LEFT_COMPANY",
+        current_user,
+        current_client,
+        reason,
+        terminal=True,
+        application_status="WITHDRAWN",
+    )
     logger.info("Candidate left company", candidate_id=str(candidate.id), client_id=str(current_client.id))
     return candidate
 

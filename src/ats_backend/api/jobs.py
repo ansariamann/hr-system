@@ -2,6 +2,7 @@
 
 from typing import List, Optional
 from uuid import UUID
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from ats_backend.core.error_handling import with_error_handling
 from ats_backend.core.session_context import set_client_context
 from ats_backend.auth.dependencies import get_current_user
 from ats_backend.auth.models import User
+from ats_backend.models.client import Client
 from ats_backend.models.job import Job
 from ats_backend.models.activity_log import ActivityLog
 from ats_backend.schemas.job import JobCreate, JobUpdate, JobResponse
@@ -19,13 +21,16 @@ from ats_backend.services.job_service import JobService
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
-@router.get("", response_model=List[JobResponse])
+@router.get("/", response_model=List[JobResponse])
 @with_error_handling(component="jobs_api")
 def list_jobs(
     search: Optional[str] = None,
     company_name: Optional[str] = None,
     job_title: Optional[str] = None,
     field: Optional[str] = None,
+    department: Optional[str] = None,
+    employment_type: Optional[str] = None,
+    job_status: Optional[str] = None,
     location: Optional[str] = None,
     min_experience: Optional[int] = Query(None, ge=0, le=60),
     max_experience: Optional[int] = Query(None, ge=0, le=60),
@@ -45,6 +50,9 @@ def list_jobs(
         company_name=company_name,
         job_title=job_title,
         field=field,
+        department=department,
+        employment_type=employment_type,
+        status=job_status,
         location=location,
         min_experience=min_experience,
         max_experience=max_experience,
@@ -56,7 +64,7 @@ def list_jobs(
     )
 
 
-@router.post("", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 @with_error_handling(component="jobs_api")
 def create_job(
     payload: JobCreate,
@@ -64,7 +72,7 @@ def create_job(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new job posting."""
-    allowed_roles = {"hr_admin", "hr_user", "client_admin"}
+    allowed_roles = {"hr_admin", "hr_recruiter", "client_admin"}
     user_role = (current_user.role or "").lower()
     if user_role not in allowed_roles:
         raise HTTPException(
@@ -82,17 +90,31 @@ def create_job(
     else:
         client_id = current_user.client_id
 
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
     set_client_context(db, client_id)
+
+    submitted_by_client = user_role == "client_admin"
+
+    posting_date = date.today() if submitted_by_client else payload.posting_date
 
     job = Job(
         client_id=client_id,
         title=payload.title,
-        company_name=payload.company_name,
-        posting_date=payload.posting_date,
+        company_name=client.name,
+        posting_date=posting_date,
+        closing_date=payload.closing_date,
         requirements=payload.requirements,
+        department=payload.department,
+        employment_type=payload.employment_type,
         experience_required=payload.experience_required,
         salary_lpa=payload.salary_lpa,
         location=payload.location,
+        openings_count=payload.openings_count,
+        status=payload.status,
+        submitted_by_client=submitted_by_client,
     )
 
     service = JobService()
@@ -103,7 +125,18 @@ def create_job(
         user_id=current_user.id,
         action_type="JOB_CREATED",
         entity_id=job.id,
-        details={"title": job.title, "company_name": job.company_name}
+        details={
+            "title": job.title,
+            "company_name": job.company_name,
+            "submitted_by_client": submitted_by_client,
+            "source": "client_portal" if submitted_by_client else "hr_admin",
+            "posting_date": job.posting_date.isoformat() if job.posting_date else None,
+            "closing_date": job.closing_date.isoformat() if job.closing_date else None,
+            "department": job.department,
+            "employment_type": job.employment_type,
+            "openings_count": job.openings_count,
+            "status": job.status,
+        }
     )
     db.add(activity_log)
     db.commit()
@@ -134,7 +167,7 @@ def update_job(
     current_user: User = Depends(get_current_user)
 ):
     """Update a job posting."""
-    allowed_roles = {"hr_admin", "hr_user", "client_admin"}
+    allowed_roles = {"hr_admin", "hr_recruiter", "client_admin"}
     user_role = (current_user.role or "").lower()
     if user_role not in allowed_roles:
         raise HTTPException(
@@ -147,24 +180,39 @@ def update_job(
         raise HTTPException(status_code=404, detail="Job not found")
 
     updates = payload.dict(exclude_unset=True)
+    if "company_name" in updates:
+        client = db.query(Client).filter(Client.id == job.client_id).first()
+        if not client:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+        updates["company_name"] = client.name
     previous_values = {
         "title": job.title,
         "company_name": job.company_name,
         "posting_date": job.posting_date.isoformat() if job.posting_date else None,
+        "closing_date": job.closing_date.isoformat() if job.closing_date else None,
         "requirements": job.requirements,
+        "department": job.department,
+        "employment_type": job.employment_type,
         "experience_required": job.experience_required,
         "salary_lpa": float(job.salary_lpa) if job.salary_lpa is not None else None,
         "location": job.location,
+        "openings_count": job.openings_count,
+        "status": job.status,
     }
     job = JobService.update_job(db, job, updates)
     updated_values = {
         "title": job.title,
         "company_name": job.company_name,
         "posting_date": job.posting_date.isoformat() if job.posting_date else None,
+        "closing_date": job.closing_date.isoformat() if job.closing_date else None,
         "requirements": job.requirements,
+        "department": job.department,
+        "employment_type": job.employment_type,
         "experience_required": job.experience_required,
         "salary_lpa": float(job.salary_lpa) if job.salary_lpa is not None else None,
         "location": job.location,
+        "openings_count": job.openings_count,
+        "status": job.status,
     }
     changed_fields = sorted(
         key for key, old_value in previous_values.items() if old_value != updated_values.get(key)
@@ -194,7 +242,7 @@ def delete_job(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a job posting."""
-    allowed_roles = {"hr_admin", "hr_user", "client_admin"}
+    allowed_roles = {"hr_admin", "hr_recruiter", "client_admin"}
     user_role = (current_user.role or "").lower()
     if user_role not in allowed_roles:
         raise HTTPException(

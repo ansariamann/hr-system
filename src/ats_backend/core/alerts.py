@@ -7,7 +7,10 @@ from enum import Enum
 import asyncio
 import json
 import structlog
-from pathlib import Path
+
+import aiohttp
+
+from ats_backend.email.send import send_email
 
 from .config import settings
 from .observability import Alert, AlertSeverity
@@ -101,33 +104,45 @@ class EmailNotificationSender(NotificationSender):
     async def send(self, alert: Alert, config: Dict[str, Any]) -> bool:
         """Send notification via email."""
         try:
-            # This would integrate with your email system
-            # For now, just log the email that would be sent
-            
-            subject = f"[{alert.severity.value.upper()}] ATS Alert: {alert.name}"
-            body = f"""
-Alert: {alert.name}
-Severity: {alert.severity.value}
-Condition: {alert.condition}
-Threshold: {alert.threshold}
-Current Value: {alert.current_value}
-Message: {alert.message}
-Triggered At: {alert.triggered_at.isoformat()}
+            recipients = [recipient for recipient in config.get("recipients", []) if recipient]
+            if not recipients:
+                logger.error("Alert email recipients not configured", alert_name=alert.name)
+                return False
 
-Details:
-{json.dumps(alert.details, indent=2)}
-"""
-            
-            logger.info(
-                "Email notification would be sent",
-                to=config.get("recipients", []),
-                subject=subject,
-                alert_name=alert.name,
-                severity=alert.severity.value
+            subject = f"[{alert.severity.value.upper()}] ATS Alert: {alert.name}"
+            body = (
+                "<html><body>"
+                f"<h2>ATS Alert: {alert.name}</h2>"
+                f"<p><strong>Severity:</strong> {alert.severity.value}</p>"
+                f"<p><strong>Condition:</strong> {alert.condition}</p>"
+                f"<p><strong>Threshold:</strong> {alert.threshold}</p>"
+                f"<p><strong>Current Value:</strong> {alert.current_value}</p>"
+                f"<p><strong>Message:</strong> {alert.message}</p>"
+                f"<p><strong>Triggered At:</strong> {alert.triggered_at.isoformat()}</p>"
+                f"<pre>{json.dumps(alert.details, indent=2)}</pre>"
+                "</body></html>"
             )
-            
-            # TODO: Integrate with actual email sending service
-            return True
+
+            results = await asyncio.gather(
+                *[
+                    asyncio.to_thread(
+                        send_email,
+                        to=recipient,
+                        subject=subject,
+                        html_body=body,
+                    )
+                    for recipient in recipients
+                ]
+            )
+
+            success = all(results)
+            logger.info(
+                "Alert email notifications processed",
+                recipients=recipients,
+                alert_name=alert.name,
+                success=success,
+            )
+            return success
             
         except Exception as e:
             logger.error("Failed to send email notification", error=str(e))
@@ -140,9 +155,11 @@ class SlackNotificationSender(NotificationSender):
     async def send(self, alert: Alert, config: Dict[str, Any]) -> bool:
         """Send notification via Slack."""
         try:
-            # This would integrate with Slack API
-            # For now, just log the Slack message that would be sent
-            
+            webhook_url = config.get("webhook_url")
+            if not webhook_url:
+                logger.error("Slack webhook URL not configured", alert_name=alert.name)
+                return False
+
             color = {
                 AlertSeverity.INFO: "good",
                 AlertSeverity.WARNING: "warning", 
@@ -163,17 +180,28 @@ class SlackNotificationSender(NotificationSender):
                     "ts": int(alert.triggered_at.timestamp())
                 }]
             }
-            
-            logger.info(
-                "Slack notification would be sent",
-                webhook_url=config.get("webhook_url", "not_configured"),
-                channel=config.get("channel", "#alerts"),
-                message=message,
-                alert_name=alert.name
-            )
-            
-            # TODO: Integrate with actual Slack webhook
-            return True
+
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(webhook_url, json=message) as response:
+                    if response.status in {200, 201, 202, 204}:
+                        logger.info(
+                            "Slack notification sent successfully",
+                            webhook_url=webhook_url,
+                            channel=config.get("channel", "#alerts"),
+                            alert_name=alert.name,
+                            status_code=response.status,
+                        )
+                        return True
+
+                    logger.error(
+                        "Slack notification failed",
+                        webhook_url=webhook_url,
+                        alert_name=alert.name,
+                        status_code=response.status,
+                        response_text=await response.text(),
+                    )
+                    return False
             
         except Exception as e:
             logger.error("Failed to send Slack notification", error=str(e))
@@ -186,8 +214,6 @@ class WebhookNotificationSender(NotificationSender):
     async def send(self, alert: Alert, config: Dict[str, Any]) -> bool:
         """Send notification via webhook."""
         try:
-            import aiohttp
-            
             webhook_url = config.get("url")
             if not webhook_url:
                 logger.error("Webhook URL not configured")

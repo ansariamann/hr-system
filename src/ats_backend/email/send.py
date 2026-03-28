@@ -1,8 +1,10 @@
 """Lightweight email sending utility for transactional emails."""
 
 import smtplib
+from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Optional
 
 import structlog
@@ -10,6 +12,32 @@ import structlog
 from ats_backend.core.config import settings
 
 logger = structlog.get_logger(__name__)
+
+
+def save_email_as_text(
+    to: str,
+    subject: str,
+    text_body: str,
+    from_address: Optional[str] = None,
+) -> str:
+    """Save a generated email to a local text file and return the file path."""
+    sender = from_address or settings.email_from_address
+    output_dir = Path(settings.storage_path) / "generated_emails"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_recipient = "".join(ch if ch.isalnum() else "_" for ch in to)[:80] or "recipient"
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    path = output_dir / f"{timestamp}_{safe_recipient}.txt"
+    content = (
+        f"To: {to}\n"
+        f"From: {sender}\n"
+        f"Subject: {subject}\n"
+        f"Generated At (UTC): {datetime.utcnow().isoformat()}\n\n"
+        f"{text_body}"
+    )
+    path.write_text(content, encoding="utf-8")
+    logger.info("Generated email saved to text file", to=to, path=str(path))
+    return str(path)
 
 
 def send_email(

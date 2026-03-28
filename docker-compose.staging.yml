@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     container_name: ats-postgres-staging
@@ -7,16 +5,12 @@ services:
       POSTGRES_DB: ats_staging
       POSTGRES_USER: ats_staging_user
       POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD}
-    ports:
-      - "5433:5432"
     volumes:
       - postgres_data_staging:/var/lib/postgresql/data
       - ./backups/staging:/backups
 
   redis:
     container_name: ats-redis-staging
-    ports:
-      - "6380:6379"
     volumes:
       - redis_data_staging:/data
 
@@ -28,12 +22,12 @@ services:
       POSTGRES_USER: ats_staging_user
       POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD}
       REDIS_DB: 1
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
       LOG_LEVEL: INFO
       DEBUG: "false"
       SECRET_KEY: ${STAGING_SECRET_KEY}
       BACKUP_PATH: /app/backups/staging
-    ports:
-      - "8001:8000"
     volumes:
       - ./backups/staging:/app/backups/staging
 
@@ -44,6 +38,8 @@ services:
       POSTGRES_USER: ats_staging_user
       POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD}
       REDIS_DB: 1
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
       LOG_LEVEL: INFO
       SECRET_KEY: ${STAGING_SECRET_KEY}
       BACKUP_PATH: /app/backups/staging
@@ -51,6 +47,22 @@ services:
       - ./backups/staging:/app/backups/staging
     deploy:
       replicas: 2
+
+  beat:
+    container_name: ats-beat-staging
+    environment:
+      ENVIRONMENT: staging
+      POSTGRES_DB: ats_staging
+      POSTGRES_USER: ats_staging_user
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD}
+      REDIS_DB: 1
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      LOG_LEVEL: INFO
+      SECRET_KEY: ${STAGING_SECRET_KEY}
+      BACKUP_PATH: /app/backups/staging
+    volumes:
+      - ./backups/staging:/app/backups/staging
 
 volumes:
   postgres_data_staging:

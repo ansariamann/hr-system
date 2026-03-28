@@ -4,7 +4,7 @@ This document describes the database schema implementation for the ATS Backend S
 
 ## Overview
 
-The database schema implements a multi-tenant architecture using PostgreSQL Row-Level Security (RLS) to ensure strict data isolation between client organizations. The schema includes four main entities: Clients, Candidates, Applications, and Resume Jobs.
+The database schema implements a multi-tenant architecture using PostgreSQL Row-Level Security (RLS) to ensure strict data isolation between client organizations. The schema includes the core ATS entities: Clients, Jobs, Candidates, Applications, and Resume Jobs.
 
 ## Database Tables
 
@@ -37,8 +37,38 @@ CREATE TABLE candidates (
     experience JSONB,
     ctc_current DECIMAL(12,2),
     ctc_expected DECIMAL(12,2),
+    total_experience_years DECIMAL(5,2),
+    notice_period_days INTEGER,
+    source VARCHAR(100) DEFAULT 'MANUAL' NOT NULL,
+    linkedin_url VARCHAR(500),
     status VARCHAR(50) DEFAULT 'ACTIVE' NOT NULL,
     candidate_hash VARCHAR(64),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+### Jobs Table
+
+Stores open and closed job requisitions for each client.
+
+```sql
+CREATE TABLE jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id),
+    title VARCHAR(255) NOT NULL,
+    company_name VARCHAR(255) NOT NULL,
+    posting_date DATE DEFAULT CURRENT_DATE NOT NULL,
+    closing_date DATE,
+    requirements TEXT,
+    department VARCHAR(255),
+    employment_type VARCHAR(50) DEFAULT 'FULL_TIME' NOT NULL,
+    experience_required INTEGER,
+    salary_lpa NUMERIC(10,2),
+    location VARCHAR(255),
+    openings_count INTEGER DEFAULT 1 NOT NULL,
+    status VARCHAR(50) DEFAULT 'OPEN' NOT NULL,
+    submitted_by_client BOOLEAN DEFAULT FALSE NOT NULL,
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -53,11 +83,16 @@ CREATE TABLE applications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL REFERENCES clients(id),
     candidate_id UUID NOT NULL REFERENCES candidates(id),
+    job_id UUID REFERENCES jobs(id),
     job_title VARCHAR(255),
     application_date TIMESTAMP DEFAULT NOW(),
+    source VARCHAR(100) DEFAULT 'MANUAL' NOT NULL,
     status VARCHAR(50) DEFAULT 'RECEIVED' NOT NULL,
+    status_updated_at TIMESTAMP DEFAULT NOW() NOT NULL,
     flagged_for_review BOOLEAN DEFAULT FALSE NOT NULL,
     flag_reason TEXT,
+    notes TEXT,
+    applied_by_user_id UUID REFERENCES users(id),
     deleted_at TIMESTAMP,  -- Soft delete
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()

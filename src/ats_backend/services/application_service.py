@@ -1,6 +1,7 @@
 """Application management service."""
 
 import asyncio
+from datetime import datetime
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 
@@ -8,9 +9,14 @@ from sqlalchemy.orm import Session
 import structlog
 
 from ats_backend.models.application import Application
+from ats_backend.models.job import Job
 from ats_backend.repositories.application import ApplicationRepository
 from ats_backend.repositories.candidate import CandidateRepository
-from ats_backend.schemas.application import ApplicationCreate, ApplicationUpdate
+from ats_backend.schemas.application import (
+    ApplicationCreate,
+    ApplicationUpdate,
+    normalize_application_status,
+)
 from ats_backend.core.event_publisher import event_publisher
 
 logger = structlog.get_logger(__name__)
@@ -49,11 +55,30 @@ class ApplicationService:
         """
         try:
             candidate_repo = CandidateRepository()
-            candidate = candidate_repo.get_by_id_for_client(
-                db, application_data.candidate_id, client_id
-            )
+            candidate = candidate_repo.get_by_id(db, application_data.candidate_id)
             if not candidate:
-                raise ValueError("Candidate not found for the selected client")
+                raise ValueError("Candidate not found")
+            if candidate.status == "SELECTED":
+                raise ValueError("Selected candidates cannot be used to create a new application")
+
+            application_payload = application_data.dict(
+                exclude={"client_id"}, exclude_none=True
+            )
+            if "status" in application_payload:
+                application_payload["status"] = normalize_application_status(application_payload["status"])
+            job_id = application_payload.get("job_id")
+            if job_id is not None:
+                job = (
+                    db.query(Job)
+                    .filter(Job.id == job_id, Job.client_id == client_id)
+                    .first()
+                )
+                if not job:
+                    raise ValueError("Job not found for the selected client")
+                application_payload["job_title"] = job.title
+
+            if user_id and not application_payload.get("applied_by_user_id"):
+                application_payload["applied_by_user_id"] = user_id
 
             application = self.repository.create_with_audit(
                 db=db,
@@ -61,7 +86,7 @@ class ApplicationService:
                 user_id=user_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
-                **application_data.dict(exclude={"client_id"}, exclude_none=True)
+                **application_payload
             )
             
             logger.info(
@@ -235,6 +260,22 @@ class ApplicationService:
             
             # Only update fields that are provided
             update_data = application_data.dict(exclude_unset=True)
+            if "job_id" in update_data:
+                job_id = update_data.get("job_id")
+                if job_id is None:
+                    update_data["job_title"] = None
+                else:
+                    job = (
+                        db.query(Job)
+                        .filter(Job.id == job_id, Job.client_id == client_id)
+                        .first()
+                    )
+                    if not job:
+                        raise ValueError("Job not found for the selected client")
+                    update_data["job_title"] = job.title
+            if "status" in update_data:
+                update_data["status"] = normalize_application_status(update_data["status"])
+                update_data["status_updated_at"] = datetime.utcnow()
             
             application = self.repository.update_with_audit(
                 db=db,

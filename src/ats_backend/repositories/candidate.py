@@ -63,6 +63,7 @@ class CandidateRepository(AuditedRepository[Candidate]):
                     Candidate.name.ilike(pattern),
                     Candidate.email.ilike(pattern),
                     Candidate.company.ilike(pattern),
+                    Candidate.selected_client_name.ilike(pattern),
                     Candidate.location.ilike(pattern),
                     cast(Candidate.skills, String).ilike(pattern),
                 )

@@ -1,6 +1,6 @@
 """Application configuration management."""
 
-from typing import Optional, List
+from typing import Optional, List, Dict
 from datetime import datetime
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -54,6 +54,15 @@ class Settings(BaseSettings):
         default=[".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif"],
         description="Supported resume file extensions"
     )
+    imap_ingestion_enabled: bool = Field(default=False, description="Enable IMAP mailbox polling for resume ingestion")
+    imap_host: str = Field(default="imap.gmail.com", description="IMAP server host")
+    imap_port: int = Field(default=993, description="IMAP server port")
+    imap_username: Optional[str] = Field(default=None, description="IMAP username")
+    imap_password: Optional[str] = Field(default=None, description="IMAP password or app password")
+    imap_mailbox: str = Field(default="INBOX", description="Mailbox folder to poll")
+    imap_poll_interval_seconds: int = Field(default=60, description="Seconds between IMAP polling runs")
+    imap_max_messages_per_poll: int = Field(default=25, description="Maximum unread messages to fetch per poll")
+    imap_client_id: Optional[str] = Field(default=None, description="Client UUID associated with the IMAP mailbox")
     
     # Storage Configuration
     storage_path: str = Field(default="./storage", description="Path for file storage")
@@ -77,6 +86,16 @@ class Settings(BaseSettings):
     frontend_hr_url: str = Field(default="http://localhost:5173", description="HR Dashboard frontend URL")
     frontend_client_url: str = Field(default="http://localhost:5174", description="Client Portal frontend URL")
     email_from_address: str = Field(default="noreply@hr-system.local", description="Email sender address")
+
+    # Alerting Configuration
+    alerts_email_enabled: bool = Field(default=False, description="Enable alert delivery via email")
+    alerts_email_recipients: List[str] = Field(default_factory=list, description="Email recipients for alerts")
+    alerts_slack_enabled: bool = Field(default=False, description="Enable alert delivery via Slack webhook")
+    alerts_slack_webhook_url: Optional[str] = Field(default=None, description="Slack incoming webhook URL for alerts")
+    alerts_slack_channel: str = Field(default="#alerts", description="Slack channel label for alert messages")
+    alerts_webhook_enabled: bool = Field(default=False, description="Enable alert delivery via generic webhook")
+    alerts_webhook_url: Optional[str] = Field(default=None, description="Generic webhook URL for alerts")
+    alerts_webhook_headers: Dict[str, str] = Field(default_factory=dict, description="Optional HTTP headers for alert webhook delivery")
     
     # Runtime Configuration
     startup_time: Optional[datetime] = Field(default=None, description="System startup time")

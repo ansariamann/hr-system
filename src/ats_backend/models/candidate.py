@@ -1,10 +1,9 @@
 """Candidate model for job applicants."""
 
 from datetime import datetime
-from decimal import Decimal
-from uuid import UUID, uuid4
+from uuid import uuid4
 
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey, DECIMAL, Boolean, text, JSON, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, DECIMAL, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import relationship
 
 from ats_backend.core.base import Base
@@ -36,6 +35,11 @@ class Candidate(Base):
     experience = Column(JSON, nullable=True)
     ctc_current = Column(DECIMAL(12, 2), nullable=True)
     ctc_expected = Column(DECIMAL(12, 2), nullable=True)
+    total_experience_years = Column(DECIMAL(5, 2), nullable=True)
+    notice_period_days = Column(Integer, nullable=True)
+    source = Column(String(100), nullable=False, default="MANUAL", server_default="MANUAL")
+    linkedin_url = Column(String(500), nullable=True)
+    selected_client_name = Column(String(255), nullable=True)
     status = Column(String(50), default="ACTIVE", nullable=False)
     is_blacklisted = Column(Boolean, default=False, nullable=False)
     is_direct_interview = Column(Boolean, default=False, nullable=False)

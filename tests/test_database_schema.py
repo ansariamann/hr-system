@@ -18,7 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ats_backend.core.database import Base
 from ats_backend.core.session_context import set_client_context, clear_client_context
-from ats_backend.models import Client, Candidate, Application, ResumeJob
+from ats_backend.models import Application, Candidate, Client, Job, ResumeJob
 
 
 class TestDatabaseSchema:
@@ -125,6 +125,32 @@ class TestDatabaseSchema:
         assert candidate.skills["languages"] == ["Python", "JavaScript"]
         assert candidate.ctc_current == Decimal("50000.00")
         assert candidate.status == "ACTIVE"
+        assert candidate.source == "MANUAL"
+        assert candidate.total_experience_years is None
+        assert candidate.notice_period_days is None
+
+    def test_job_creation(self, db_session, sample_client):
+        """Test job model creation with core recruitment attributes."""
+        job = Job(
+            client_id=sample_client.id,
+            title="Backend Engineer",
+            company_name=sample_client.name,
+            department="Engineering",
+            employment_type="FULL_TIME",
+            location="Bengaluru",
+            openings_count=2,
+            status="OPEN",
+        )
+
+        db_session.add(job)
+        db_session.commit()
+
+        assert job.id is not None
+        assert job.client_id == sample_client.id
+        assert job.department == "Engineering"
+        assert job.employment_type == "FULL_TIME"
+        assert job.openings_count == 2
+        assert job.status == "OPEN"
     
     def test_application_creation(self, db_session, sample_client):
         """Test application model creation."""
@@ -134,14 +160,23 @@ class TestDatabaseSchema:
             name="Jane Smith",
             email="jane.smith@example.com"
         )
+        job = Job(
+            client_id=sample_client.id,
+            title="Software Engineer",
+            company_name=sample_client.name,
+        )
         db_session.add(candidate)
+        db_session.add(job)
         db_session.commit()
         
         # Create application
         application = Application(
             client_id=sample_client.id,
             candidate_id=candidate.id,
+            job_id=job.id,
             job_title="Software Engineer",
+            source="JOB_BOARD",
+            notes="Strong shortlist candidate",
             status="RECEIVED"
         )
         
@@ -151,8 +186,12 @@ class TestDatabaseSchema:
         assert application.id is not None
         assert application.client_id == sample_client.id
         assert application.candidate_id == candidate.id
+        assert application.job_id == job.id
         assert application.job_title == "Software Engineer"
+        assert application.source == "JOB_BOARD"
+        assert application.notes == "Strong shortlist candidate"
         assert application.status == "RECEIVED"
+        assert application.status_updated_at is not None
         assert application.flagged_for_review is False
         assert application.deleted_at is None
     

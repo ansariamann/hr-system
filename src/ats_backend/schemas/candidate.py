@@ -28,7 +28,23 @@ class CandidateBase(BaseModel):
     experience: Optional[Dict[str, Any]] = Field(None, description="Candidate experience in JSONB format")
     ctc_current: Optional[Decimal] = Field(None, ge=0, description="Current CTC in decimal format")
     ctc_expected: Optional[Decimal] = Field(None, ge=0, description="Expected CTC in decimal format")
+    total_experience_years: Optional[Decimal] = Field(
+        None, ge=0, le=80, description="Total years of experience"
+    )
+    notice_period_days: Optional[int] = Field(
+        None, ge=0, le=365, description="Notice period in days"
+    )
+    source: Optional[str] = Field(
+        default="MANUAL", max_length=100, description="Candidate source channel"
+    )
+    linkedin_url: Optional[str] = Field(
+        None, max_length=500, description="Candidate LinkedIn profile URL"
+    )
+    selected_client_name: Optional[str] = Field(
+        None, max_length=255, description="Client name associated after candidate selection"
+    )
     status: str = Field(default="ACTIVE", description="Candidate status")
+    is_blacklisted: bool = Field(default=False, description="Whether candidate is blacklisted")
     is_direct_interview: bool = Field(default=False, description="Whether candidate has a direct interview record")
     remark: Optional[str] = Field(None, description="Candidate remarks or notes")
     
@@ -111,7 +127,13 @@ class CandidateUpdate(BaseModel):
     experience: Optional[Dict[str, Any]] = None
     ctc_current: Optional[Decimal] = Field(None, ge=0)
     ctc_expected: Optional[Decimal] = Field(None, ge=0)
+    total_experience_years: Optional[Decimal] = Field(None, ge=0, le=80)
+    notice_period_days: Optional[int] = Field(None, ge=0, le=365)
+    source: Optional[str] = Field(None, max_length=100)
+    linkedin_url: Optional[str] = Field(None, max_length=500)
+    selected_client_name: Optional[str] = Field(None, max_length=255)
     status: Optional[str] = None
+    is_blacklisted: Optional[bool] = None
     is_direct_interview: Optional[bool] = None
     remark: Optional[str] = None
     

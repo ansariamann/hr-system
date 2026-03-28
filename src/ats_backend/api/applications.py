@@ -3,12 +3,13 @@
 from typing import List, Optional, Dict, Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 import structlog
 
 from ats_backend.core.database import get_db
 from ats_backend.auth.dependencies import get_current_user, get_current_client
 from ats_backend.auth.models import User
+from ats_backend.models.application import Application
 from ats_backend.models.client import Client
 from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.application_service import ApplicationService
@@ -120,6 +121,8 @@ async def create_application(
 @router.get("", response_model=List[ApplicationResponse])
 async def list_applications(
     application_status: Optional[str] = Query(None, description="Filter by application status"),
+    candidate_id: Optional[UUID] = Query(None, description="Filter by candidate ID"),
+    client_id: Optional[UUID] = Query(None, description="Filter by client ID"),
     flagged_only: bool = Query(False, description="Show only flagged applications"),
     include_deleted: bool = Query(False, description="Include soft-deleted applications"),
     skip: int = Query(0, ge=0, description="Number of records to skip"),
@@ -140,38 +143,82 @@ async def list_applications(
             client_id=str(current_client.id)
         ):
             application_service = ApplicationService()
+            user_role = (current_user.role or "").strip().lower()
+            is_hr_privileged = user_role in HR_PRIVILEGED_ROLES
             
-            if flagged_only:
-                applications = application_service.get_flagged_applications(
-                    db=db,
-                    client_id=current_client.id,
-                    skip=skip,
-                    limit=limit
+            if is_hr_privileged:
+                query = db.query(Application).options(
+                    joinedload(Application.candidate),
+                    joinedload(Application.client),
                 )
-            elif application_status:
-                applications = application_service.get_applications_by_status(
-                    db=db,
-                    client_id=current_client.id,
-                    status=application_status,
-                    skip=skip,
-                    limit=limit,
-                    include_deleted=include_deleted
-                )
-            elif include_deleted:
-                # Get all applications including deleted ones
-                from ats_backend.repositories.application import ApplicationRepository
-                repo = ApplicationRepository()
-                applications = repo.get_multi(
-                    db, skip, limit, {"client_id": current_client.id}, include_deleted=True
+
+                if client_id:
+                    query = query.filter(Application.client_id == client_id)
+                if candidate_id:
+                    query = query.filter(Application.candidate_id == candidate_id)
+                if application_status:
+                    query = query.filter(Application.status == application_status)
+                if flagged_only:
+                    query = query.filter(Application.flagged_for_review.is_(True))
+                if not include_deleted:
+                    query = query.filter(Application.deleted_at.is_(None))
+
+                applications = (
+                    query
+                    .order_by(Application.application_date.desc(), Application.created_at.desc())
+                    .offset(skip)
+                    .limit(limit)
+                    .all()
                 )
             else:
-                applications = application_service.get_active_applications(
-                    db=db,
-                    client_id=current_client.id,
-                    skip=skip,
-                    limit=limit
-                )
-            
+                if client_id and client_id != current_client.id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Not allowed to access applications for another client"
+                    )
+
+                if flagged_only:
+                    applications = application_service.get_flagged_applications(
+                        db=db,
+                        client_id=current_client.id,
+                        skip=skip,
+                        limit=limit
+                    )
+                elif application_status:
+                    applications = application_service.get_applications_by_status(
+                        db=db,
+                        client_id=current_client.id,
+                        status=application_status,
+                        skip=skip,
+                        limit=limit,
+                        include_deleted=include_deleted
+                    )
+                elif include_deleted or candidate_id:
+                    query = db.query(Application).options(
+                        joinedload(Application.candidate),
+                        joinedload(Application.client),
+                    ).filter(Application.client_id == current_client.id)
+
+                    if candidate_id:
+                        query = query.filter(Application.candidate_id == candidate_id)
+                    if not include_deleted:
+                        query = query.filter(Application.deleted_at.is_(None))
+
+                    applications = (
+                        query
+                        .order_by(Application.application_date.desc(), Application.created_at.desc())
+                        .offset(skip)
+                        .limit(limit)
+                        .all()
+                    )
+                else:
+                    applications = application_service.get_active_applications(
+                        db=db,
+                        client_id=current_client.id,
+                        skip=skip,
+                        limit=limit
+                    )
+
             logger.info(
                 "Applications listed via API",
                 client_id=str(current_client.id),
@@ -179,6 +226,8 @@ async def list_applications(
                 count=len(applications),
                 filters={
                     "status": application_status,
+                    "candidate_id": str(candidate_id) if candidate_id else None,
+                    "client_id": str(client_id) if client_id else None,
                     "flagged_only": flagged_only,
                     "include_deleted": include_deleted
                 }
@@ -786,3 +835,15 @@ async def get_application_statistics(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get application statistics: {str(e)}"
         )
+
+
+@router.get("/statistics")
+async def get_application_statistics_alias(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client)
+):
+    """Alias for /stats/summary (frontend compatibility)."""
+    return await get_application_statistics(
+        db=db, current_user=current_user, current_client=current_client
+    )

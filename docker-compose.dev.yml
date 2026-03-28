@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     container_name: ats-postgres-dev
@@ -43,12 +41,29 @@ services:
       POSTGRES_USER: ats_dev_user
       POSTGRES_PASSWORD: dev_password_change_me
       REDIS_DB: 0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
       LOG_LEVEL: DEBUG
       BACKUP_PATH: /app/backups/dev
     volumes:
       - ./backups/dev:/app/backups/dev
     deploy:
       replicas: 1
+
+  beat:
+    container_name: ats-beat-dev
+    environment:
+      ENVIRONMENT: development
+      POSTGRES_DB: ats_dev
+      POSTGRES_USER: ats_dev_user
+      POSTGRES_PASSWORD: dev_password_change_me
+      REDIS_DB: 0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      LOG_LEVEL: DEBUG
+      BACKUP_PATH: /app/backups/dev
+    volumes:
+      - ./backups/dev:/app/backups/dev
 
 volumes:
   postgres_data_dev:

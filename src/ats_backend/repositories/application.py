@@ -49,7 +49,7 @@ class ApplicationRepository(AuditedRepository[Application]):
             query = query.filter(Application.deleted_at.is_(None))
 
         return (
-            query.options(joinedload(Application.candidate))
+            query.options(joinedload(Application.candidate), joinedload(Application.client))
             .order_by(Application.application_date.desc(), Application.created_at.desc())
             .all()
         )
@@ -87,7 +87,7 @@ class ApplicationRepository(AuditedRepository[Application]):
             query = query.filter(Application.deleted_at.is_(None))
         
         return (
-            query.options(joinedload(Application.candidate))
+            query.options(joinedload(Application.candidate), joinedload(Application.client))
             .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -121,7 +121,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                     Application.deleted_at.is_(None)
                 )
             )
-            .options(joinedload(Application.candidate))
+            .options(joinedload(Application.candidate), joinedload(Application.client))
             .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -274,7 +274,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                     Application.deleted_at.is_(None)
                 )
             )
-            .options(joinedload(Application.candidate))
+            .options(joinedload(Application.candidate), joinedload(Application.client))
             .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -307,7 +307,7 @@ class ApplicationRepository(AuditedRepository[Application]):
                     Application.deleted_at.isnot(None)
                 )
             )
-            .options(joinedload(Application.candidate))
+            .options(joinedload(Application.candidate), joinedload(Application.client))
             .order_by(Application.application_date.desc(), Application.created_at.desc())
             .offset(skip)
             .limit(limit)

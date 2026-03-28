@@ -10,6 +10,8 @@ from ats_backend.workers.celery_app import celery_app
 from ats_backend.core.database import get_db
 from ats_backend.core.metrics import metrics_collector
 from ats_backend.core.logging import performance_logger, error_logger
+from ats_backend.core.config import settings
+from ats_backend.email.imap import IMAPPollingService
 from ats_backend.email.processor import EmailProcessor
 from ats_backend.email.models import EmailMessage, EmailIngestionResponse
 
@@ -71,6 +73,39 @@ class EmailProcessingTask(Task):
                 "client_id": kwargs.get("client_id", "unknown")
             }
         )
+
+
+@celery_app.task(bind=True, base=EmailProcessingTask)
+def poll_imap_inbox(self) -> Dict[str, Any]:
+    """Poll the configured IMAP inbox for unread resume emails."""
+    result = {
+        "success": True,
+        "imap_enabled": settings.imap_ingestion_enabled,
+        "messages_seen": 0,
+        "messages_ingested": 0,
+        "attachments_processed": 0,
+        "duplicate_messages": 0,
+        "failures": 0,
+        "task_id": self.request.id,
+    }
+
+    if not settings.imap_ingestion_enabled:
+        logger.info("Skipping IMAP poll because ingestion is disabled", task_id=self.request.id)
+        return result
+
+    db = next(get_db())
+    try:
+        poller = IMAPPollingService()
+        poll_result = poller.poll_inbox(db)
+        db.commit()
+        result.update(poll_result.as_dict())
+        result["success"] = poll_result.failures == 0
+        return result
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
 
 
 @celery_app.task(bind=True, base=EmailProcessingTask)

@@ -13,6 +13,7 @@ from ats_backend.email.models import (
     FileStorageInfo
 )
 from ats_backend.email.storage import FileStorageService
+from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.resume_job_service import ResumeJobService
 from ats_backend.schemas.resume_job import ResumeJobCreate
 from ats_backend.models.resume_job import ResumeJob
@@ -66,6 +67,18 @@ class EmailProcessor:
                     message_id=email.message_id,
                     existing_job_id=str(existing_job.id),
                     client_id=str(client_id)
+                )
+                self._log_activity(
+                    db=db,
+                    client_id=client_id,
+                    user_id=user_id,
+                    action_type="EMAIL_DUPLICATE",
+                    entity_id=existing_job.id,
+                    details={
+                        "message_id": email.message_id,
+                        "sender": email.sender,
+                        "subject": email.subject,
+                    },
                 )
                 return EmailIngestionResponse(
                     success=True,
@@ -144,6 +157,18 @@ class EmailProcessor:
                     continue
             
             if processed_count == 0:
+                self._log_activity(
+                    db=db,
+                    client_id=client_id,
+                    user_id=user_id,
+                    action_type="EMAIL_SKIPPED",
+                    details={
+                        "message_id": email.message_id,
+                        "sender": email.sender,
+                        "subject": email.subject,
+                        "reason": "No valid resume attachments found to process",
+                    },
+                )
                 return EmailIngestionResponse(
                     success=False,
                     message="No valid resume attachments found to process",
@@ -157,6 +182,20 @@ class EmailProcessor:
                 client_id=str(client_id),
                 jobs_created=len(job_ids),
                 attachments_processed=processed_count
+            )
+            self._log_activity(
+                db=db,
+                client_id=client_id,
+                user_id=user_id,
+                action_type="EMAIL_INGESTED",
+                entity_id=job_ids[0] if job_ids else None,
+                details={
+                    "message_id": email.message_id,
+                    "sender": email.sender,
+                    "subject": email.subject,
+                    "jobs_created": len(job_ids),
+                    "processed_attachments": processed_count,
+                },
             )
             
             return EmailIngestionResponse(
@@ -173,12 +212,44 @@ class EmailProcessor:
                 client_id=str(client_id),
                 error=str(e)
             )
+            self._log_activity(
+                db=db,
+                client_id=client_id,
+                user_id=user_id,
+                action_type="EMAIL_FAILED",
+                details={
+                    "message_id": email.message_id,
+                    "sender": email.sender,
+                    "subject": email.subject,
+                    "error": str(e),
+                },
+            )
             return EmailIngestionResponse(
                 success=False,
                 message=f"Email processing failed: {str(e)}",
                 job_ids=[],
                 processed_attachments=0
             )
+
+    @staticmethod
+    def _log_activity(
+        db: Session,
+        client_id: UUID,
+        action_type: str,
+        *,
+        user_id: Optional[UUID] = None,
+        entity_id: Optional[UUID] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        db.add(
+            ActivityLog(
+                client_id=client_id,
+                user_id=user_id,
+                action_type=action_type,
+                entity_id=entity_id,
+                details=details,
+            )
+        )
     
     def validate_email_message(self, email: EmailMessage) -> List[str]:
         """Validate email message for processing.

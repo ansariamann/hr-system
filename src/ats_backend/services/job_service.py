@@ -31,6 +31,9 @@ class JobService:
         company_name: Optional[str] = None,
         job_title: Optional[str] = None,
         field: Optional[str] = None,
+        department: Optional[str] = None,
+        employment_type: Optional[str] = None,
+        status: Optional[str] = None,
         location: Optional[str] = None,
         min_experience: Optional[int] = None,
         max_experience: Optional[int] = None,
@@ -55,6 +58,15 @@ class JobService:
         if field:
             like = f"%{field.strip()}%"
             query = query.filter(or_(Job.title.ilike(like), Job.requirements.ilike(like)))
+
+        if department:
+            query = query.filter(Job.department.ilike(f"%{department.strip()}%"))
+
+        if employment_type:
+            query = query.filter(Job.employment_type == employment_type)
+
+        if status:
+            query = query.filter(Job.status == status)
 
         if location:
             query = query.filter(Job.location.ilike(f"%{location.strip()}%"))

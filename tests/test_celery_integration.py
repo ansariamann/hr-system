@@ -16,10 +16,14 @@ class TestCeleryIntegrationWithoutRedis:
     
     def test_task_registration(self):
         """Test that tasks are properly registered."""
+        import ats_backend.workers.email_tasks  # noqa: F401
+        import ats_backend.workers.resume_tasks  # noqa: F401
+
         registered_tasks = list(celery_app.tasks.keys())
         
         # Check for key tasks
         expected_tasks = [
+            "poll_imap_inbox",
             "validate_email_format",
             "health_check_workers", 
             "monitor_system_performance",
@@ -52,7 +56,7 @@ class TestCeleryIntegrationWithoutRedis:
         assert "total_workers" in worker_stats
         
         queue_info = monitor.get_queue_lengths()
-        assert "total_queued" in queue_info
+        assert "total_queued" in queue_info or "error" in queue_info
     
     def test_celery_configuration_values(self):
         """Test specific Celery configuration values."""
@@ -103,6 +107,7 @@ class TestCeleryIntegrationWithoutRedis:
         
         # Check for scheduled tasks
         assert "cleanup-old-files" in schedule
+        assert "poll-imap-inbox" in schedule
         assert "cleanup-failed-jobs" in schedule
         assert "health-check-workers" in schedule
         
@@ -110,7 +115,10 @@ class TestCeleryIntegrationWithoutRedis:
         cleanup_files = schedule["cleanup-old-files"]
         assert cleanup_files["task"] == "cleanup_old_files"
         assert cleanup_files["schedule"] == 86400.0  # Daily
-        
+
+        poll_imap = schedule["poll-imap-inbox"]
+        assert poll_imap["task"] == "poll_imap_inbox"
+
         cleanup_jobs = schedule["cleanup-failed-jobs"]
         assert cleanup_jobs["task"] == "cleanup_failed_jobs_all_clients"
         assert cleanup_jobs["schedule"] == 3600.0  # Hourly

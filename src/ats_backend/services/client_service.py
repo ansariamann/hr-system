@@ -23,7 +23,14 @@ class ClientService:
     def create_client(
         db: Session,
         name: str,
-        email_domain: Optional[str] = None
+        email_domain: Optional[str] = None,
+        industry: Optional[str] = None,
+        contact_name: Optional[str] = None,
+        contact_email: Optional[str] = None,
+        contact_phone: Optional[str] = None,
+        address: Optional[str] = None,
+        website: Optional[str] = None,
+        is_active: bool = True,
     ) -> Client:
         """Create a new client.
         
@@ -41,7 +48,14 @@ class ClientService:
         try:
             client = Client(
                 name=name,
-                email_domain=email_domain
+                industry=industry,
+                contact_name=contact_name,
+                contact_email=contact_email,
+                contact_phone=contact_phone,
+                address=address,
+                website=website,
+                email_domain=email_domain,
+                is_active=is_active,
             )
             
             db.add(client)
@@ -87,10 +101,28 @@ class ClientService:
     def provision_client_with_admin(
         db: Session,
         name: str,
-        email_domain: Optional[str] = None
+        email_domain: Optional[str] = None,
+        industry: Optional[str] = None,
+        contact_name: Optional[str] = None,
+        contact_email: Optional[str] = None,
+        contact_phone: Optional[str] = None,
+        address: Optional[str] = None,
+        website: Optional[str] = None,
+        is_active: bool = True,
     ) -> tuple[Client, User, str]:
         """Create client and provision a default client_admin user."""
-        client = ClientService.create_client(db, name=name, email_domain=email_domain)
+        client = ClientService.create_client(
+            db,
+            name=name,
+            email_domain=email_domain,
+            industry=industry,
+            contact_name=contact_name,
+            contact_email=contact_email,
+            contact_phone=contact_phone,
+            address=address,
+            website=website,
+            is_active=is_active,
+        )
         admin_email = ClientService._generate_unique_admin_email(db, name, email_domain)
         admin_password = ClientService._generate_temp_password()
 
@@ -162,7 +194,14 @@ class ClientService:
         db: Session,
         client_id: UUID,
         name: Optional[str] = None,
-        email_domain: Optional[str] = None
+        email_domain: Optional[str] = None,
+        industry: Optional[str] = None,
+        contact_name: Optional[str] = None,
+        contact_email: Optional[str] = None,
+        contact_phone: Optional[str] = None,
+        address: Optional[str] = None,
+        website: Optional[str] = None,
+        is_active: Optional[bool] = None,
     ) -> Optional[Client]:
         """Update client information.
         
@@ -184,8 +223,22 @@ class ClientService:
         try:
             if name is not None:
                 client.name = name
+            if industry is not None:
+                client.industry = industry
+            if contact_name is not None:
+                client.contact_name = contact_name
+            if contact_email is not None:
+                client.contact_email = contact_email
+            if contact_phone is not None:
+                client.contact_phone = contact_phone
+            if address is not None:
+                client.address = address
+            if website is not None:
+                client.website = website
             if email_domain is not None:
                 client.email_domain = email_domain
+            if is_active is not None:
+                client.is_active = is_active
             
             db.flush()  # Flush without committing - let caller control transaction
             db.refresh(client)

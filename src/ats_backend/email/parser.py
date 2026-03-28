@@ -44,37 +44,18 @@ class EmailParser:
         try:
             # Parse raw email
             msg = email.message_from_string(raw_email)
+            return self._build_email_message(msg)
             
-            # Extract basic information
-            message_id = self._extract_message_id(msg)
-            sender = self._extract_sender(msg)
-            subject = self._extract_subject(msg)
-            body = self._extract_body(msg)
-            received_at = self._extract_received_date(msg)
-            headers = self._extract_headers(msg)
-            
-            # Extract attachments
-            attachments = self._extract_attachments(msg)
-            
-            email_message = EmailMessage(
-                message_id=message_id,
-                sender=sender,
-                subject=subject,
-                body=body,
-                received_at=received_at,
-                attachments=attachments,
-                headers=headers
-            )
-            
-            logger.info(
-                "Email parsed successfully",
-                message_id=message_id,
-                sender=sender,
-                attachment_count=len(attachments)
-            )
-            
-            return email_message
-            
+        except Exception as e:
+            logger.error("Failed to parse raw email", error=str(e))
+            raise ValueError(f"Email parsing failed: {str(e)}")
+
+    def parse_raw_email_bytes(self, raw_email: bytes) -> EmailMessage:
+        """Parse raw email bytes into EmailMessage object."""
+        try:
+            msg = email.message_from_bytes(raw_email)
+            return self._build_email_message(msg)
+
         except Exception as e:
             logger.error("Failed to parse raw email", error=str(e))
             raise ValueError(f"Email parsing failed: {str(e)}")
@@ -156,6 +137,35 @@ class EmailParser:
             message_id = f"generated-{uuid.uuid4()}@ats-backend"
             logger.warning("No Message-ID found, generated fallback", message_id=message_id)
         return message_id
+
+    def _build_email_message(self, msg: StdEmailMessage) -> EmailMessage:
+        """Build the domain email model from a parsed stdlib message."""
+        message_id = self._extract_message_id(msg)
+        sender = self._extract_sender(msg)
+        subject = self._extract_subject(msg)
+        body = self._extract_body(msg)
+        received_at = self._extract_received_date(msg)
+        headers = self._extract_headers(msg)
+        attachments = self._extract_attachments(msg)
+
+        email_message = EmailMessage(
+            message_id=message_id,
+            sender=sender,
+            subject=subject,
+            body=body,
+            received_at=received_at,
+            attachments=attachments,
+            headers=headers
+        )
+
+        logger.info(
+            "Email parsed successfully",
+            message_id=message_id,
+            sender=sender,
+            attachment_count=len(attachments)
+        )
+
+        return email_message
     
     def _extract_sender(self, msg: StdEmailMessage) -> str:
         """Extract sender email address from email message."""
