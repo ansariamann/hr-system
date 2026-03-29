@@ -89,7 +89,12 @@ class IMAPPollingService:
 
             message_numbers = [msg_no for msg_no in messages[0].split() if msg_no]
             if settings.imap_max_messages_per_poll > 0:
-                message_numbers = message_numbers[: settings.imap_max_messages_per_poll]
+                # IMAP SEARCH returns message sequence numbers in ascending order.
+                # Process the newest unread messages first so a noisy inbox does not
+                # starve recently received resumes.
+                message_numbers = message_numbers[-settings.imap_max_messages_per_poll :]
+
+            message_numbers = list(reversed(message_numbers))
 
             for msg_no in message_numbers:
                 result.messages_seen += 1

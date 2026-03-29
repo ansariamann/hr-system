@@ -128,14 +128,31 @@ class EmailProcessor:
                     
                     job_ids.append(job.id)
                     processed_count += 1
+
+                    # Persist job creation before dispatching async work.
+                    # Without this commit, workers can race ahead and fail to
+                    # find the job row in a separate DB session.
+                    db.commit()
                     
                     # Trigger resume processing task asynchronously
-                    from ats_backend.workers.resume_tasks import process_resume_file
-                    process_resume_file.delay(
-                        client_id=str(client_id),
-                        job_id=str(job.id),
-                        user_id=str(user_id) if user_id else None
-                    )
+                    try:
+                        from ats_backend.workers.resume_tasks import process_resume_file
+                        process_resume_file.delay(
+                            client_id=str(client_id),
+                            job_id=str(job.id),
+                            user_id=str(user_id) if user_id else None
+                        )
+                    except Exception as queue_error:
+                        self.resume_job_service.update_job_status(
+                            db=db,
+                            job_id=job.id,
+                            client_id=client_id,
+                            status="FAILED",
+                            error_message=f"Queue dispatch failed: {str(queue_error)}",
+                            user_id=user_id,
+                        )
+                        db.commit()
+                        raise
                     
                     logger.info(
                         "Resume job created and processing queued",
@@ -424,6 +441,29 @@ class EmailProcessor:
             )
             
             if success:
+                # Persist FAILED -> PENDING transition before task dispatch to
+                # avoid workers reading stale status.
+                db.commit()
+
+                try:
+                    from ats_backend.workers.resume_tasks import process_resume_file
+                    process_resume_file.delay(
+                        client_id=str(client_id),
+                        job_id=str(job_id),
+                        user_id=str(user_id) if user_id else None
+                    )
+                except Exception as queue_error:
+                    self.resume_job_service.update_job_status(
+                        db=db,
+                        job_id=job_id,
+                        client_id=client_id,
+                        status="FAILED",
+                        error_message=f"Retry queue dispatch failed: {str(queue_error)}",
+                        user_id=user_id,
+                    )
+                    db.commit()
+                    raise
+
                 logger.info(
                     "Job retry initiated",
                     job_id=str(job_id),

@@ -44,6 +44,7 @@ class JobUpdate(BaseModel):
 class JobResponse(JobBase):
     id: UUID
     client_id: UUID
+    vacant: bool
     submitted_by_client: bool
     created_at: datetime
     updated_at: datetime

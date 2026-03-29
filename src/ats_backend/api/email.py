@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 import structlog
 
 from ats_backend.core.database import get_db
-from ats_backend.auth.dependencies import get_current_user, get_current_client
+from ats_backend.auth.dependencies import get_current_user, get_current_client, require_roles
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
 from ats_backend.email.models import (
@@ -29,11 +29,40 @@ from ats_backend.workers.email_tasks import (
 from ats_backend.services.resume_job_service import ResumeJobService
 from ats_backend.schemas.resume_job import ResumeJobResponse
 from ats_backend.resume.parser import ResumeParser
+from ats_backend.email.imap import IMAPPollingService
 from pathlib import Path
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/email", tags=["email"])
+
+
+@router.post("/poll-imap")
+async def poll_imap_mailbox(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_roles(["hr_admin"])),
+):
+    """Trigger an immediate IMAP mailbox poll for resume ingestion."""
+    try:
+        poller = IMAPPollingService()
+        result = poller.poll_inbox(db, user_id=current_user.id)
+        db.commit()
+        return {
+            "success": result.failures == 0,
+            **result.as_dict(),
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Manual IMAP poll failed",
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Manual IMAP poll failed: {str(e)}"
+        )
 
 
 @router.post("/ingest", response_model=EmailIngestionResponse)
@@ -470,6 +499,77 @@ async def retry_failed_job(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retry job: {str(e)}"
+        )
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_resume_job(
+    task_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+    _: User = Depends(require_roles(["hr_admin"])),
+):
+    """Delete a resume processing request (resume job)."""
+    try:
+        resume_job_service = ResumeJobService()
+        job = resume_job_service.get_job_by_id(db, task_id)
+
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Resume job not found"
+            )
+
+        if job.client_id != current_client.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this resume job"
+            )
+
+        # Best-effort file cleanup for uploaded attachment.
+        if job.file_path:
+            try:
+                from ats_backend.email.storage import FileStorageService
+                FileStorageService().delete_file(job.file_path)
+            except Exception:
+                # Do not block job deletion if file cleanup fails.
+                pass
+
+        deleted = resume_job_service.delete_job(
+            db=db,
+            job_id=task_id,
+            client_id=current_client.id,
+            user_id=current_user.id
+        )
+
+        if not deleted:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Failed to delete resume job"
+            )
+
+        db.commit()
+        return {
+            "success": True,
+            "message": "Resume processing request deleted",
+            "job_id": str(task_id),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to delete resume job",
+            job_id=str(task_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete resume job: {str(e)}"
         )
 
 

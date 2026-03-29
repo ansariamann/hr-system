@@ -100,6 +100,14 @@ class ResumeJobService:
             Resume job if found, None otherwise
         """
         return self.repository.get_by_id(db, job_id)
+
+    def get_job(
+        self,
+        db: Session,
+        job_id: UUID
+    ) -> Optional[ResumeJob]:
+        """Backward-compatible alias used by worker code paths."""
+        return self.get_job_by_id(db, job_id)
     
     def get_job_by_email_message_id(
         self, 

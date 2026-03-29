@@ -1250,6 +1250,9 @@ def _log_transition(
             latest_application.status = application_status
             latest_application.status_updated_at = datetime.utcnow()
             latest_application.updated_at = datetime.utcnow()
+            if getattr(latest_application, "job_id", None):
+                from ats_backend.services.job_service import JobService
+                JobService.sync_job_vacancy(db, latest_application.job_id)
 
     log = FSMTransitionLog(
         candidate_id=candidate.id,
@@ -1291,6 +1294,33 @@ def _log_event(
     return candidate
 
 
+def _get_next_interview_round(db: Session, candidate_id: UUID, client_id: UUID) -> int:
+    from ats_backend.models.fsm_transition_log import FSMTransitionLog
+
+    logs = (
+        db.query(FSMTransitionLog)
+        .filter(
+            FSMTransitionLog.candidate_id == candidate_id,
+            FSMTransitionLog.client_id == client_id,
+            FSMTransitionLog.new_status == "INTERVIEW_SCHEDULED",
+        )
+        .order_by(FSMTransitionLog.created_at.asc())
+        .all()
+    )
+
+    latest_round = 0
+    for log in logs:
+        reason = log.reason or ""
+        for part in reason.split(" | "):
+            if part.startswith("Round: "):
+                try:
+                    latest_round = max(latest_round, int(part.split(": ", 1)[1]))
+                except ValueError:
+                    continue
+
+    return max(1, latest_round + 1)
+
+
 @router.post("/{candidate_id}/schedule-interview", response_model=CandidateResponse)
 async def schedule_interview(
     candidate_id: UUID,
@@ -1306,6 +1336,20 @@ async def schedule_interview(
     )
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
+
+    expected_round = _get_next_interview_round(db, candidate.id, current_client.id)
+    if expected_round > 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Interview pipeline is limited to 6 rounds"
+        )
+
+    requested_round = payload.roundNumber or 1
+    if requested_round != expected_round:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Next interview must be scheduled as round {expected_round}"
+        )
 
     reason_parts = ["Interview scheduled"]
     if payload.scheduledDate:
@@ -1361,6 +1405,40 @@ async def select_candidate(
         application_status="HIRED",
     )
     logger.info("Candidate selected", candidate_id=str(candidate.id), client_id=str(current_client.id))
+    # Auto-create a company employee record for the selected candidate
+    try:
+        from ats_backend.services.company_employee_service import CompanyEmployeeService
+
+        # Determine role from latest application's job_title
+        latest_app = (
+            db.query(Application)
+            .filter(
+                Application.client_id == current_client.id,
+                Application.candidate_id == candidate.id,
+                Application.deleted_at.is_(None),
+            )
+            .order_by(Application.created_at.desc())
+            .first()
+        )
+        role = latest_app.job_title if latest_app else None
+        app_id = latest_app.id if latest_app else None
+
+        CompanyEmployeeService.create_from_candidate(
+            db,
+            client_id=current_client.id,
+            candidate_id=candidate.id,
+            application_id=app_id,
+            role=role,
+        )
+        db.commit()
+    except Exception as emp_err:
+        db.rollback()
+        logger.warning(
+            "Failed to auto-create company employee on select",
+            candidate_id=str(candidate.id),
+            error=str(emp_err),
+        )
+
     return candidate
 
 
@@ -1562,6 +1640,25 @@ async def select_candidate_directly(
             db.add(candidate)
             db.commit()
             db.refresh(candidate)
+
+            try:
+                from ats_backend.services.company_employee_service import CompanyEmployeeService
+
+                CompanyEmployeeService.create_from_candidate(
+                    db,
+                    client_id=current_client.id,
+                    candidate_id=candidate.id,
+                    role=latest_interview.position,
+                )
+                db.commit()
+            except Exception as emp_err:
+                db.rollback()
+                logger.warning(
+                    "Failed to auto-create company employee on direct select",
+                    candidate_id=str(candidate_id),
+                    client_id=str(current_client.id),
+                    error=str(emp_err),
+                )
 
             logger.info(
                 "Candidate selected via direct interview",

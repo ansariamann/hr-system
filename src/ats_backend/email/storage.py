@@ -9,6 +9,7 @@ import structlog
 
 from ats_backend.email.models import EmailAttachment, FileStorageInfo
 from ats_backend.security.abuse_protection import abuse_protection
+from ats_backend.core.config import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -16,13 +17,14 @@ logger = structlog.get_logger(__name__)
 class FileStorageService:
     """Service for storing email attachments to filesystem."""
     
-    def __init__(self, base_storage_path: str = "storage/resumes"):
+    def __init__(self, base_storage_path: Optional[str] = None):
         """Initialize file storage service.
         
         Args:
             base_storage_path: Base directory for storing files
         """
-        self.base_storage_path = Path(base_storage_path)
+        resolved_storage_path = base_storage_path or settings.email_storage_path
+        self.base_storage_path = Path(resolved_storage_path)
         self.base_storage_path.mkdir(parents=True, exist_ok=True)
         
         logger.info("File storage service initialized", storage_path=str(self.base_storage_path))

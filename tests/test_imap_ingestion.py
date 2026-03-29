@@ -228,3 +228,45 @@ def test_imap_poller_respects_max_messages_per_poll(monkeypatch, mock_db_session
 
     assert result.messages_seen == 1
     assert processor.process_email.call_count == 1
+
+
+def test_imap_poller_prioritizes_newest_unseen_messages(monkeypatch, mock_db_session):
+    apply_imap_settings(monkeypatch, imap_max_messages_per_poll=2)
+    fake_imap = FakeIMAP(
+        {
+            b"1": build_raw_email(
+                message_id="<oldest@example.com>",
+                attachments=[("resume-1.pdf", "application/pdf", b"%PDF-1.4 one")],
+            ),
+            b"2": build_raw_email(
+                message_id="<middle@example.com>",
+                attachments=[("resume-2.pdf", "application/pdf", b"%PDF-1.4 two")],
+            ),
+            b"3": build_raw_email(
+                message_id="<newest@example.com>",
+                attachments=[("resume-3.pdf", "application/pdf", b"%PDF-1.4 three")],
+            ),
+        }
+    )
+    processor = MagicMock()
+    processor.process_email.return_value = EmailIngestionResponse(
+        success=True,
+        message="ok",
+        job_ids=[],
+        processed_attachments=1,
+    )
+
+    service = IMAPPollingService(
+        email_processor=processor,
+        imap_factory=lambda host, port: fake_imap,
+    )
+
+    result = service.poll_inbox(mock_db_session)
+
+    assert result.messages_seen == 2
+    assert processor.process_email.call_count == 2
+    processed_ids = [
+        call.kwargs["email"].message_id
+        for call in processor.process_email.call_args_list
+    ]
+    assert processed_ids == ["<newest@example.com>", "<middle@example.com>"]

@@ -29,6 +29,7 @@ class Job(Base):
     location = Column(String(255), nullable=True, index=True)
     openings_count = Column(Integer, nullable=False, default=1, server_default="1")
     status = Column(String(50), nullable=False, default="OPEN", server_default="OPEN", index=True)
+    vacant = Column(Boolean, nullable=False, default=True, server_default="true", index=True)
     submitted_by_client = Column(Boolean, nullable=False, default=False, server_default="false")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

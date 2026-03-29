@@ -27,6 +27,46 @@ class ApplicationService:
     
     def __init__(self):
         self.repository = ApplicationRepository()
+
+    @staticmethod
+    def _build_prior_rejection_remark(previous_applications: List[Application]) -> Optional[str]:
+        rejected_titles: List[str] = []
+        for previous_application in previous_applications:
+            if previous_application.status not in {"REJECTED", "WITHDRAWN"}:
+                continue
+            if not previous_application.job_title:
+                continue
+            if previous_application.job_title in rejected_titles:
+                continue
+            rejected_titles.append(previous_application.job_title)
+
+        if not rejected_titles:
+            return None
+
+        if len(rejected_titles) == 1:
+            return f"Rejected earlier for {rejected_titles[0]}"
+
+        return f"Rejected earlier for {', '.join(rejected_titles[:-1])}, and {rejected_titles[-1]}"
+
+    @staticmethod
+    def _update_candidate_for_resubmission(
+        candidate,
+        previous_applications: List[Application],
+    ) -> None:
+        prior_rejection_remark = ApplicationService._build_prior_rejection_remark(previous_applications)
+        if prior_rejection_remark:
+            candidate.remark = prior_rejection_remark
+
+        if candidate.status in {"REJECTED", "INACTIVE"}:
+            candidate.status = "ACTIVE"
+            candidate.updated_at = datetime.utcnow()
+
+    @staticmethod
+    def _sync_job_vacancy(db: Session, job_id: Optional[UUID]) -> None:
+        if job_id is None:
+            return
+        from ats_backend.services.job_service import JobService
+        JobService.sync_job_vacancy(db, job_id)
     
     def create_application(
         self,
@@ -58,8 +98,21 @@ class ApplicationService:
             candidate = candidate_repo.get_by_id(db, application_data.candidate_id)
             if not candidate:
                 raise ValueError("Candidate not found")
+            if candidate.client_id != client_id:
+                raise ValueError("Candidate not found for the selected client")
             if candidate.status == "SELECTED":
                 raise ValueError("Selected candidates cannot be used to create a new application")
+
+            previous_applications = (
+                db.query(Application)
+                .filter(
+                    Application.client_id == client_id,
+                    Application.candidate_id == application_data.candidate_id,
+                )
+                .order_by(Application.created_at.desc())
+                .all()
+            )
+            self._update_candidate_for_resubmission(candidate, previous_applications)
 
             application_payload = application_data.dict(
                 exclude={"client_id"}, exclude_none=True
@@ -75,6 +128,8 @@ class ApplicationService:
                 )
                 if not job:
                     raise ValueError("Job not found for the selected client")
+                if not job.vacant:
+                    raise ValueError("Selected job is no longer vacant")
                 application_payload["job_title"] = job.title
 
             if user_id and not application_payload.get("applied_by_user_id"):
@@ -88,6 +143,7 @@ class ApplicationService:
                 user_agent=user_agent,
                 **application_payload
             )
+            self._sync_job_vacancy(db, application.job_id)
             
             logger.info(
                 "Application created",
@@ -260,6 +316,7 @@ class ApplicationService:
             
             # Only update fields that are provided
             update_data = application_data.dict(exclude_unset=True)
+            old_job_id = old_application.job_id
             if "job_id" in update_data:
                 job_id = update_data.get("job_id")
                 if job_id is None:
@@ -272,6 +329,8 @@ class ApplicationService:
                     )
                     if not job:
                         raise ValueError("Job not found for the selected client")
+                    if not job.vacant and job_id != old_job_id:
+                        raise ValueError("Selected job is no longer vacant")
                     update_data["job_title"] = job.title
             if "status" in update_data:
                 update_data["status"] = normalize_application_status(update_data["status"])
@@ -286,6 +345,10 @@ class ApplicationService:
                 user_agent=user_agent,
                 **update_data
             )
+
+            if application:
+                self._sync_job_vacancy(db, old_job_id)
+                self._sync_job_vacancy(db, application.job_id)
             
             if application:
                 logger.info(
@@ -368,6 +431,8 @@ class ApplicationService:
             True if soft deleted, False if not found
         """
         try:
+            existing_application = self.repository.get_by_id(db, application_id)
+            affected_job_id = existing_application.job_id if existing_application else None
             deleted = self.repository.soft_delete_with_audit(
                 db=db,
                 application_id=application_id,
@@ -378,6 +443,7 @@ class ApplicationService:
             )
             
             if deleted:
+                self._sync_job_vacancy(db, affected_job_id)
                 logger.info(
                     "Application soft deleted",
                     application_id=str(application_id),
@@ -418,6 +484,8 @@ class ApplicationService:
             True if restored, False if not found
         """
         try:
+            existing_application = self.repository.get_by_id(db, application_id)
+            affected_job_id = existing_application.job_id if existing_application else None
             restored = self.repository.restore_with_audit(
                 db=db,
                 application_id=application_id,
@@ -428,6 +496,7 @@ class ApplicationService:
             )
             
             if restored:
+                self._sync_job_vacancy(db, affected_job_id)
                 logger.info(
                     "Application restored",
                     application_id=str(application_id),

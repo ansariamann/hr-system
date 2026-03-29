@@ -37,6 +37,7 @@ def list_jobs(
     min_salary_lpa: Optional[float] = Query(None, ge=0),
     max_salary_lpa: Optional[float] = Query(None, ge=0),
     sort: Optional[str] = Query(None, max_length=32),
+    include_filled: bool = Query(False, description="Include non-vacant jobs in the response"),
     skip: int = 0,
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -59,6 +60,7 @@ def list_jobs(
         min_salary_lpa=min_salary_lpa,
         max_salary_lpa=max_salary_lpa,
         sort=sort,
+        include_filled=include_filled,
         skip=skip,
         limit=limit
     )
@@ -114,6 +116,7 @@ def create_job(
         location=payload.location,
         openings_count=payload.openings_count,
         status=payload.status,
+        vacant=True,
         submitted_by_client=submitted_by_client,
     )
 
@@ -136,6 +139,7 @@ def create_job(
             "employment_type": job.employment_type,
             "openings_count": job.openings_count,
             "status": job.status,
+            "vacant": job.vacant,
         }
     )
     db.add(activity_log)
@@ -198,6 +202,7 @@ def update_job(
         "location": job.location,
         "openings_count": job.openings_count,
         "status": job.status,
+        "vacant": job.vacant,
     }
     job = JobService.update_job(db, job, updates)
     updated_values = {
@@ -213,6 +218,7 @@ def update_job(
         "location": job.location,
         "openings_count": job.openings_count,
         "status": job.status,
+        "vacant": job.vacant,
     }
     changed_fields = sorted(
         key for key, old_value in previous_values.items() if old_value != updated_values.get(key)

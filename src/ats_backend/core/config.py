@@ -48,7 +48,7 @@ class Settings(BaseSettings):
     tesseract_cmd: str = Field(default="/usr/bin/tesseract", description="Tesseract command path")
     
     # Email Configuration
-    email_storage_path: str = Field(default="storage/resumes", description="Path for storing email attachments")
+    email_storage_path: str = Field(default="uploads/resumes", description="Path for storing email attachments")
     max_attachment_size_mb: int = Field(default=50, description="Maximum attachment size in MB")
     supported_file_extensions: List[str] = Field(
         default=[".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif"],

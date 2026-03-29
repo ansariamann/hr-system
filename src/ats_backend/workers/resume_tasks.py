@@ -14,6 +14,7 @@ from ats_backend.services.candidate_service import CandidateService
 from ats_backend.services.application_service import ApplicationService
 from ats_backend.schemas.candidate import CandidateCreate
 from ats_backend.schemas.application import ApplicationCreate
+from ats_backend.models.activity_log import ActivityLog
 
 logger = structlog.get_logger(__name__)
 
@@ -135,6 +136,7 @@ def process_resume_file(
             resume_job_service.update_job_status(
                 db, UUID(job_id), UUID(client_id), "PROCESSING", user_id=UUID(user_id) if user_id else None
             )
+            db.commit()  # Persist status transition for UI visibility.
             
             # Initialize resume parser
             parser = ResumeParser()
@@ -150,6 +152,20 @@ def process_resume_file(
                     error_message=parsing_result.error_message,
                     user_id=UUID(user_id) if user_id else None
                 )
+                db.add(
+                    ActivityLog(
+                        client_id=UUID(client_id),
+                        user_id=UUID(user_id) if user_id else None,
+                        action_type="RESUME_INGESTION_FAILED",
+                        entity_id=UUID(job_id),
+                        details={
+                            "job_id": job_id,
+                            "file_name": job.file_name,
+                            "reason": parsing_result.error_message,
+                        },
+                    )
+                )
+                db.commit()  # Persist FAILED status instead of rolling back on return.
                 
                 logger.error(
                     "Resume parsing failed",
@@ -168,7 +184,17 @@ def process_resume_file(
             # Convert parsed resume to candidate data
             parsed_resume = parsing_result.parsed_resume
             candidate_data = parsed_resume.to_candidate_data()
-            
+
+            # Mark candidate as sourced from email ingestion
+            candidate_data["source"] = "EMAIL"
+
+            # Provide a fallback name when resume parsing could not extract one.
+            # CandidateCreate.name is required (min_length=1), so a None value
+            # would raise a Pydantic validation error and abort the whole task.
+            if not candidate_data.get("name"):
+                stem = Path(job.file_name).stem if job.file_name else job_id
+                candidate_data["name"] = f"Candidate ({stem})"
+
             # Use duplicate detection service for comprehensive analysis
             from ats_backend.services.duplicate_detection_service import DuplicateDetectionService
             duplicate_service = DuplicateDetectionService()
@@ -250,6 +276,22 @@ def process_resume_file(
                 db, UUID(job_id), UUID(client_id), "COMPLETED",
                 user_id=UUID(user_id) if user_id else None
             )
+            db.add(
+                ActivityLog(
+                    client_id=UUID(client_id),
+                    user_id=UUID(user_id) if user_id else None,
+                    action_type="RESUME_INGESTION_COMPLETED",
+                    entity_id=UUID(job_id),
+                    details={
+                        "job_id": job_id,
+                        "file_name": job.file_name,
+                        "candidate_id": str(candidate.id),
+                        "application_id": str(application.id),
+                        "source": "EMAIL",
+                    },
+                )
+            )
+            db.commit()  # Persist candidate, application, and completed job status
             
             logger.info(
                 "Resume processing task completed successfully",
@@ -303,6 +345,7 @@ def process_resume_file(
                     error_message=str(e),
                     user_id=UUID(user_id) if user_id else None
                 )
+                db.commit()  # Persist FAILED status so it survives session close
             finally:
                 db.close()
         except:

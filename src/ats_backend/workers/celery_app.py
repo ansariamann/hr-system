@@ -1,7 +1,16 @@
 """Celery application configuration with comprehensive error handling."""
 
 from celery import Celery, __version__ as celery_version
-from celery.signals import task_prerun, task_postrun, task_failure, task_retry, worker_ready, worker_shutdown
+from celery.signals import (
+    task_prerun,
+    task_postrun,
+    task_failure,
+    task_retry,
+    worker_ready,
+    worker_shutdown,
+    worker_process_init,
+)
+from kombu import Queue
 import structlog
 from datetime import datetime
 from typing import Dict, Any
@@ -30,6 +39,17 @@ celery_app = Celery(
 
 # Configure Celery with comprehensive error handling
 celery_app.conf.update(
+    # Queue definitions: keep default celery queue and dedicated processing queues.
+    # This allows workers started without explicit --queues to still consume
+    # resume/email tasks in development setups.
+    task_default_queue="celery",
+    task_queues=(
+        Queue("celery"),
+        Queue("resume_processing"),
+        Queue("email_processing"),
+    ),
+    task_create_missing_queues=True,
+
     # Task routing
     task_routes={
         "ats_backend.workers.resume_tasks.*": {"queue": "resume_processing"},
@@ -82,29 +102,29 @@ celery_app.conf.update(
     # Enhanced beat schedule for monitoring and cleanup
     beat_schedule={
         'cleanup-old-files': {
-            'task': 'cleanup_old_files',
+            'task': 'ats_backend.workers.email_tasks.cleanup_old_files',
             'schedule': 86400.0,  # Daily
             'kwargs': {'days_old': 30}
         },
         'poll-imap-inbox': {
-            'task': 'poll_imap_inbox',
+            'task': 'ats_backend.workers.email_tasks.poll_imap_inbox',
             'schedule': float(settings.imap_poll_interval_seconds),
         },
         'cleanup-failed-jobs': {
-            'task': 'cleanup_failed_jobs_all_clients',
+            'task': 'ats_backend.workers.email_tasks.cleanup_failed_jobs_all_clients',
             'schedule': 3600.0,  # Hourly
             'kwargs': {'max_age_hours': 24}
         },
         'health-check-workers': {
-            'task': 'health_check_workers',
+            'task': 'ats_backend.workers.email_tasks.health_check_workers',
             'schedule': 300.0,  # Every 5 minutes
         },
         'monitor-queue-health': {
-            'task': 'monitor_queue_health',
+            'task': 'ats_backend.workers.email_tasks.monitor_queue_health',
             'schedule': 180.0,  # Every 3 minutes
         },
         'cleanup-stale-tasks': {
-            'task': 'cleanup_stale_tasks',
+            'task': 'ats_backend.workers.email_tasks.cleanup_stale_tasks',
             'schedule': 1800.0,  # Every 30 minutes
         },
     },
@@ -114,6 +134,20 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks([
     "ats_backend.workers"
 ])
+
+
+@worker_process_init.connect
+def worker_process_init_handler(**kwargs):
+    """Initialize per-process resources required by Celery task workers."""
+    try:
+        from ats_backend.core.database import db_manager
+
+        # Each prefork child needs its own initialized SQLAlchemy engine/sessionmaker.
+        db_manager.initialize()
+        logger.info("Celery worker process database initialized")
+    except Exception as exc:
+        logger.error("Failed to initialize database in worker process", error=str(exc))
+        # Let task execution surface the underlying failure as well.
 
 
 # Enhanced task monitoring and logging signals

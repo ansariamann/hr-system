@@ -18,7 +18,9 @@ from sqlalchemy.exc import IntegrityError
 
 from ats_backend.core.database import Base
 from ats_backend.core.session_context import set_client_context, clear_client_context
-from ats_backend.models import Application, Candidate, Client, Job, ResumeJob
+from ats_backend.models import Application, Candidate, Client, CompanyEmployee, Job, ResumeJob
+from ats_backend.services.company_employee_service import CompanyEmployeeService
+from ats_backend.services.job_service import JobService
 
 
 class TestDatabaseSchema:
@@ -151,6 +153,7 @@ class TestDatabaseSchema:
         assert job.employment_type == "FULL_TIME"
         assert job.openings_count == 2
         assert job.status == "OPEN"
+        assert job.vacant is True
     
     def test_application_creation(self, db_session, sample_client):
         """Test application model creation."""
@@ -194,6 +197,69 @@ class TestDatabaseSchema:
         assert application.status_updated_at is not None
         assert application.flagged_for_review is False
         assert application.deleted_at is None
+
+    def test_job_vacancy_turns_false_when_hired_application_exists(self, db_session, sample_client):
+        """Jobs stop being vacant when an active hired application exists for them."""
+        candidate = Candidate(
+            client_id=sample_client.id,
+            name="Selected Candidate",
+            email="selected@example.com"
+        )
+        job = Job(
+            client_id=sample_client.id,
+            title="Platform Engineer",
+            company_name=sample_client.name,
+        )
+        db_session.add(candidate)
+        db_session.add(job)
+        db_session.commit()
+
+        application = Application(
+            client_id=sample_client.id,
+            candidate_id=candidate.id,
+            job_id=job.id,
+            job_title=job.title,
+            status="HIRED",
+        )
+        db_session.add(application)
+        db_session.commit()
+
+        synced_job = JobService.sync_job_vacancy(db_session, job.id)
+
+        assert synced_job is not None
+        assert synced_job.vacant is False
+
+    def test_job_vacancy_ignores_deleted_hired_applications(self, db_session, sample_client):
+        """Soft-deleted hired applications should not keep a job filled."""
+        candidate = Candidate(
+            client_id=sample_client.id,
+            name="Archived Candidate",
+            email="archived@example.com"
+        )
+        job = Job(
+            client_id=sample_client.id,
+            title="QA Engineer",
+            company_name=sample_client.name,
+        )
+        db_session.add(candidate)
+        db_session.add(job)
+        db_session.commit()
+
+        application = Application(
+            client_id=sample_client.id,
+            candidate_id=candidate.id,
+            job_id=job.id,
+            job_title=job.title,
+            status="HIRED",
+            deleted_at=datetime.utcnow(),
+        )
+        db_session.add(application)
+        db_session.commit()
+
+        synced_job = JobService.sync_job_vacancy(db_session, job.id)
+
+        assert synced_job is not None
+        assert synced_job.vacant is True
     
     def test_application_soft_delete(self, db_session, sample_client):
         """Test application soft delete functionality."""
@@ -219,6 +285,98 @@ class TestDatabaseSchema:
         application.soft_delete()
         assert application.is_deleted
         assert application.deleted_at is not None
+
+    def test_company_employee_creation(self, db_session, sample_client):
+        """Test company employee records can be created manually."""
+        employee = CompanyEmployee(
+            client_id=sample_client.id,
+            name="Employee One",
+            email="employee.one@example.com",
+            role="Backend Engineer",
+            department="Engineering",
+        )
+
+        db_session.add(employee)
+        db_session.commit()
+
+        assert employee.id is not None
+        assert employee.client_id == sample_client.id
+        assert employee.name == "Employee One"
+        assert employee.status == "ACTIVE"
+        assert employee.is_active is True
+
+    def test_company_employee_auto_created_from_selected_candidate(self, db_session, sample_client):
+        """Selected candidates should populate the company employee list once."""
+        candidate = Candidate(
+            client_id=sample_client.id,
+            name="Selected Employee",
+            email="selected.employee@example.com",
+            phone="+1234567890",
+        )
+        application = Application(
+            client_id=sample_client.id,
+            candidate_id=candidate.id,
+            job_title="Data Analyst",
+        )
+        db_session.add(candidate)
+        db_session.flush()
+        db_session.add(application)
+        db_session.commit()
+
+        created = CompanyEmployeeService.create_from_candidate(
+            db_session,
+            client_id=sample_client.id,
+            candidate_id=candidate.id,
+            application_id=application.id,
+            role=application.job_title,
+        )
+        db_session.commit()
+
+        duplicate = CompanyEmployeeService.create_from_candidate(
+            db_session,
+            client_id=sample_client.id,
+            candidate_id=candidate.id,
+            application_id=application.id,
+            role=application.job_title,
+        )
+
+        employees = db_session.query(CompanyEmployee).filter(
+            CompanyEmployee.client_id == sample_client.id
+        ).all()
+
+        assert created is not None
+        assert created.name == "Selected Employee"
+        assert created.email == "selected.employee@example.com"
+        assert created.phone == "+1234567890"
+        assert created.role == "Data Analyst"
+        assert duplicate is not None
+        assert duplicate.id == created.id
+        assert len(employees) == 1
+
+    def test_company_employee_update_can_clear_optional_fields(self, db_session, sample_client):
+        """PATCH should allow clearing optional values like notes and department."""
+        employee = CompanyEmployee(
+            client_id=sample_client.id,
+            name="Employee Two",
+            department="Engineering",
+            notes="Initial notes",
+        )
+        db_session.add(employee)
+        db_session.commit()
+
+        updated = CompanyEmployeeService.update(
+            db_session,
+            employee.id,
+            department=None,
+            notes=None,
+            role="Team Lead",
+        )
+        db_session.commit()
+
+        assert updated is not None
+        assert updated.department is None
+        assert updated.notes is None
+        assert updated.role == "Team Lead"
     
     def test_resume_job_creation(self, db_session, sample_client):
         """Test resume job model creation."""

@@ -4,9 +4,10 @@ from typing import List, Optional
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.sql import expression
 
+from ats_backend.models.application import Application
 from ats_backend.models.job import Job
 
 
@@ -40,10 +41,14 @@ class JobService:
         min_salary_lpa: Optional[float] = None,
         max_salary_lpa: Optional[float] = None,
         sort: Optional[str] = None,
+        include_filled: bool = False,
         skip: int = 0,
         limit: int = 100
     ) -> List[Job]:
         query = db.query(Job)
+
+        if not include_filled:
+            query = query.filter(Job.vacant.is_(True))
 
         if search:
             like = f"%{search.strip()}%"
@@ -125,6 +130,29 @@ class JobService:
             query = query.order_by(Job.posting_date.desc(), Job.created_at.desc())
 
         return query.offset(skip).limit(limit).all()
+
+    @staticmethod
+    def sync_job_vacancy(db: Session, job_id: UUID) -> Optional[Job]:
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            return None
+
+        has_selected_candidate = (
+            db.query(Application.id)
+            .filter(
+                and_(
+                    Application.job_id == job_id,
+                    Application.deleted_at.is_(None),
+                    Application.status == "HIRED",
+                )
+            )
+            .first()
+            is not None
+        )
+        job.vacant = not has_selected_candidate
+        db.flush()
+        db.refresh(job)
+        return job
 
     @staticmethod
     def update_job(db: Session, job: Job, updates: dict) -> Job:

@@ -6,6 +6,7 @@ from .application_service import ApplicationService
 from .resume_job_service import ResumeJobService
 from .duplicate_detection_service import DuplicateDetectionService
 from .fsm_service import FSMService
+from .company_employee_service import CompanyEmployeeService
 
 __all__ = [
     "ClientService",
@@ -13,5 +14,6 @@ __all__ = [
     "ApplicationService",
     "ResumeJobService",
     "DuplicateDetectionService",
-    "FSMService"
+    "FSMService",
+    "CompanyEmployeeService",
 ]

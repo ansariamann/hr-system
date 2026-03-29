@@ -11,7 +11,7 @@ from ats_backend.auth.models import PasswordResetToken
 from ats_backend.core.database import get_db
 from ats_backend.core.error_handling import with_error_handling
 from ats_backend.core.config import settings
-from ats_backend.auth.dependencies import get_current_user
+from ats_backend.auth.dependencies import get_current_user, get_current_client
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
 from ats_backend.models.activity_log import ActivityLog
@@ -28,6 +28,7 @@ from ats_backend.schemas.client import (
     ClientProvisionResponse,
     ClientInviteResponse,
 )
+from ats_backend.auth.models import UserResponse
 from ats_backend.services.client_service import ClientService
 
 router = APIRouter(
@@ -35,6 +36,17 @@ router = APIRouter(
     tags=["clients"],
     responses={404: {"description": "Not found"}},
 )
+
+
+@router.get("/me/users", response_model=List[UserResponse])
+@with_error_handling(component="client_api")
+def list_current_client_users(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    """List all users for the authenticated client's company."""
+    return ClientService.get_client_users(db, current_client.id)
 
 @router.get("/", response_model=List[ClientResponse])
 @with_error_handling(component="client_api")

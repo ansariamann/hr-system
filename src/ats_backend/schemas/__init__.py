@@ -5,11 +5,13 @@ from .candidate import CandidateCreate, CandidateUpdate, CandidateResponse
 from .application import ApplicationCreate, ApplicationUpdate, ApplicationResponse
 from .resume_job import ResumeJobCreate, ResumeJobUpdate, ResumeJobResponse
 from .job import JobCreate, JobUpdate, JobResponse
+from .company_employee import CompanyEmployeeCreate, CompanyEmployeeUpdate, CompanyEmployeeResponse
 
 __all__ = [
     "ClientCreate", "ClientUpdate", "ClientResponse",
     "CandidateCreate", "CandidateUpdate", "CandidateResponse", 
     "ApplicationCreate", "ApplicationUpdate", "ApplicationResponse",
     "ResumeJobCreate", "ResumeJobUpdate", "ResumeJobResponse",
-    "JobCreate", "JobUpdate", "JobResponse"
+    "JobCreate", "JobUpdate", "JobResponse",
+    "CompanyEmployeeCreate", "CompanyEmployeeUpdate", "CompanyEmployeeResponse",
 ]
