@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ats_backend.core.database import get_db
 from ats_backend.core.error_handling import with_error_handling
-from ats_backend.core.session_context import set_client_context
+from ats_backend.core.session_context import set_client_context, with_client_context
 from ats_backend.auth.dependencies import get_current_user
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
@@ -24,6 +24,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.get("/", response_model=List[JobResponse])
 @with_error_handling(component="jobs_api")
 def list_jobs(
+    client_id: Optional[UUID] = Query(None, description="Filter jobs by client (HR roles only)"),
     search: Optional[str] = None,
     company_name: Optional[str] = None,
     job_title: Optional[str] = None,
@@ -45,25 +46,53 @@ def list_jobs(
 ):
     """List jobs for current client with filters."""
     service = JobService()
-    return service.list_jobs(
-        db,
-        search=search,
-        company_name=company_name,
-        job_title=job_title,
-        field=field,
-        department=department,
-        employment_type=employment_type,
-        status=job_status,
-        location=location,
-        min_experience=min_experience,
-        max_experience=max_experience,
-        min_salary_lpa=min_salary_lpa,
-        max_salary_lpa=max_salary_lpa,
-        sort=sort,
-        include_filled=include_filled,
-        skip=skip,
-        limit=limit
-    )
+    user_role = (current_user.role or "").lower()
+    privileged_roles = {"hr_admin", "hr_recruiter"}
+    requested_client_id = client_id
+
+    if requested_client_id is not None:
+        if user_role not in privileged_roles and requested_client_id != current_user.client_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions to access jobs for this client"
+            )
+        client = db.query(Client).filter(Client.id == requested_client_id).first()
+        if not client:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+
+    effective_client_id = requested_client_id or current_user.client_id
+
+    list_kwargs = {
+        "db": db,
+        "client_id": effective_client_id,
+        "search": search,
+        "company_name": company_name,
+        "job_title": job_title,
+        "field": field,
+        "department": department,
+        "employment_type": employment_type,
+        "status": job_status,
+        "location": location,
+        "min_experience": min_experience,
+        "max_experience": max_experience,
+        "min_salary_lpa": min_salary_lpa,
+        "max_salary_lpa": max_salary_lpa,
+        "sort": sort,
+        "include_filled": include_filled,
+        "skip": skip,
+        "limit": limit,
+    }
+
+    if (
+        user_role in privileged_roles
+        and effective_client_id is not None
+        and current_user.client_id is not None
+        and effective_client_id != current_user.client_id
+    ):
+        with with_client_context(db, effective_client_id):
+            return service.list_jobs(**list_kwargs)
+
+    return service.list_jobs(**list_kwargs)
 
 
 @router.post("/", response_model=JobResponse, status_code=status.HTTP_201_CREATED)

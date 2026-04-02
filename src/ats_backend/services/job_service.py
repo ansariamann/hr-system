@@ -28,6 +28,7 @@ class JobService:
     @staticmethod
     def list_jobs(
         db: Session,
+        client_id: Optional[UUID] = None,
         search: Optional[str] = None,
         company_name: Optional[str] = None,
         job_title: Optional[str] = None,
@@ -46,6 +47,9 @@ class JobService:
         limit: int = 100
     ) -> List[Job]:
         query = db.query(Job)
+
+        if client_id is not None:
+            query = query.filter(Job.client_id == client_id)
 
         if not include_filled:
             query = query.filter(Job.vacant.is_(True))

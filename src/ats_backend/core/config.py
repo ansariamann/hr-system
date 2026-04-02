@@ -84,7 +84,7 @@ class Settings(BaseSettings):
 
     # Frontend URLs (for password reset links)
     frontend_hr_url: str = Field(default="http://localhost:5173", description="HR Dashboard frontend URL")
-    frontend_client_url: str = Field(default="http://localhost:5174", description="Client Portal frontend URL")
+    frontend_client_url: str = Field(default="http://localhost:8080", description="Client Portal frontend URL")
     email_from_address: str = Field(default="noreply@hr-system.local", description="Email sender address")
 
     # Alerting Configuration

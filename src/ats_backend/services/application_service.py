@@ -10,6 +10,7 @@ import structlog
 
 from ats_backend.models.application import Application
 from ats_backend.models.job import Job
+from ats_backend.core.session_context import with_client_context
 from ats_backend.repositories.application import ApplicationRepository
 from ats_backend.repositories.candidate import CandidateRepository
 from ats_backend.schemas.application import (
@@ -96,7 +97,18 @@ class ApplicationService:
         """
         try:
             candidate_repo = CandidateRepository()
-            candidate = candidate_repo.get_by_id(db, application_data.candidate_id)
+            candidate = candidate_repo.get_by_id_for_client(
+                db, application_data.candidate_id, client_id
+            )
+            if (
+                not candidate
+                and requesting_client_id
+                and requesting_client_id != client_id
+            ):
+                with with_client_context(db, requesting_client_id):
+                    candidate = candidate_repo.get_by_id_for_client(
+                        db, application_data.candidate_id, requesting_client_id
+                    )
             if not candidate:
                 raise ValueError("Candidate not found")
                 

@@ -79,6 +79,7 @@ services:
       - ./scripts:/app/scripts
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./storage:/app/storage
     networks:
       - ats-network
     depends_on:
@@ -127,6 +128,7 @@ services:
       - ./scripts:/app/scripts
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./storage:/app/storage
     networks:
       - ats-network
     depends_on:
@@ -180,6 +182,7 @@ services:
       - ./scripts:/app/scripts
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./storage:/app/storage
     networks:
       - ats-network
     depends_on:

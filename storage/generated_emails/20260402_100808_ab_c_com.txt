@@ -1,0 +1,27 @@
+To: ab@c.com
+From: noreply@hr-system.local
+Subject: Your orcl Client Portal Account
+Generated At (UTC): 2026-04-02T10:08:08.031347
+
+HR System Client Portal
+
+Hi r,
+
+Your client account for orcl has been created successfully.
+
+Default login credentials:
+- Login Email: client.admin@c.com
+- Temporary Password: BsW8W8X8MsCk
+
+Portal login URL:
+http://localhost:5174/login
+
+Password reset instructions:
+1. Sign in once using the temporary email and password above.
+2. Immediately change your password after login, or use the forgot-password page if needed.
+3. If you want to reset it directly, open the forgot-password page below.
+
+Forgot password URL:
+http://localhost:5174/forgot-password
+
+This message is your client creation acknowledgement and access email from HR System.

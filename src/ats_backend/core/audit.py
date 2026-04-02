@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 import structlog
 
 from .base import Base
@@ -49,6 +50,24 @@ class AuditLog(Base):
 
 class AuditLogger:
     """Service for creating audit log entries."""
+
+    @staticmethod
+    def _write_audit_log_safely(db: Session, audit_log: AuditLog) -> Optional[AuditLog]:
+        """Write audit log using a savepoint so missing/invalid audit table does not break business flow."""
+        try:
+            with db.begin_nested():
+                db.add(audit_log)
+                db.flush()
+            return audit_log
+        except SQLAlchemyError as exc:
+            logger.warning(
+                "Audit log write skipped",
+                error=str(exc),
+                table_name=audit_log.table_name,
+                record_id=str(audit_log.record_id),
+                action=audit_log.action,
+            )
+            return None
 
     @staticmethod
     def _to_activity_action_type(table_name: str, action: AuditAction) -> str:
@@ -98,7 +117,7 @@ class AuditLogger:
         user_id: Optional[UUID] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
-    ) -> AuditLog:
+    ) -> Optional[AuditLog]:
         """Log a CREATE operation.
         
         Args:
@@ -125,8 +144,7 @@ class AuditLogger:
             user_agent=user_agent
         )
         
-        db.add(audit_log)
-        db.flush()  # Flush without committing - let caller control transaction
+        saved_audit_log = AuditLogger._write_audit_log_safely(db, audit_log)
         AuditLogger._log_activity(
             db=db,
             client_id=client_id,
@@ -149,7 +167,7 @@ class AuditLogger:
             user_id=str(user_id) if user_id else None
         )
         
-        return audit_log
+        return saved_audit_log
     
     @staticmethod
     def log_update(
@@ -162,7 +180,7 @@ class AuditLogger:
         user_id: Optional[UUID] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
-    ) -> AuditLog:
+    ) -> Optional[AuditLog]:
         """Log an UPDATE operation.
         
         Args:
@@ -202,8 +220,7 @@ class AuditLogger:
             user_agent=user_agent
         )
         
-        db.add(audit_log)
-        db.flush()  # Flush without committing - let caller control transaction
+        saved_audit_log = AuditLogger._write_audit_log_safely(db, audit_log)
         AuditLogger._log_activity(
             db=db,
             client_id=client_id,
@@ -229,7 +246,7 @@ class AuditLogger:
             user_id=str(user_id) if user_id else None
         )
         
-        return audit_log
+        return saved_audit_log
     
     @staticmethod
     def log_delete(
@@ -241,7 +258,7 @@ class AuditLogger:
         user_id: Optional[UUID] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
-    ) -> AuditLog:
+    ) -> Optional[AuditLog]:
         """Log a DELETE operation.
         
         Args:
@@ -268,8 +285,7 @@ class AuditLogger:
             user_agent=user_agent
         )
         
-        db.add(audit_log)
-        db.flush()  # Flush without committing - let caller control transaction
+        saved_audit_log = AuditLogger._write_audit_log_safely(db, audit_log)
         AuditLogger._log_activity(
             db=db,
             client_id=client_id,
@@ -292,7 +308,7 @@ class AuditLogger:
             user_id=str(user_id) if user_id else None
         )
         
-        return audit_log
+        return saved_audit_log
     
     @staticmethod
     def log_soft_delete(
@@ -304,7 +320,7 @@ class AuditLogger:
         user_id: Optional[UUID] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
-    ) -> AuditLog:
+    ) -> Optional[AuditLog]:
         """Log a SOFT_DELETE operation.
         
         Args:
@@ -331,8 +347,7 @@ class AuditLogger:
             user_agent=user_agent
         )
         
-        db.add(audit_log)
-        db.flush()  # Flush without committing - let caller control transaction
+        saved_audit_log = AuditLogger._write_audit_log_safely(db, audit_log)
         AuditLogger._log_activity(
             db=db,
             client_id=client_id,
@@ -355,7 +370,7 @@ class AuditLogger:
             user_id=str(user_id) if user_id else None
         )
         
-        return audit_log
+        return saved_audit_log
     
     @staticmethod
     def log_restore(
@@ -367,7 +382,7 @@ class AuditLogger:
         user_id: Optional[UUID] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
-    ) -> AuditLog:
+    ) -> Optional[AuditLog]:
         """Log a RESTORE operation.
         
         Args:
@@ -394,8 +409,7 @@ class AuditLogger:
             user_agent=user_agent
         )
         
-        db.add(audit_log)
-        db.flush()  # Flush without committing - let caller control transaction
+        saved_audit_log = AuditLogger._write_audit_log_safely(db, audit_log)
         AuditLogger._log_activity(
             db=db,
             client_id=client_id,
@@ -418,7 +432,7 @@ class AuditLogger:
             user_id=str(user_id) if user_id else None
         )
         
-        return audit_log
+        return saved_audit_log
     
     @staticmethod
     def get_audit_trail(
