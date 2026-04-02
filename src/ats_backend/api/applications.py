@@ -76,7 +76,8 @@ async def create_application(
                     application_data=application_data,
                     user_id=current_user.id,
                     ip_address=ip_address,
-                    user_agent=user_agent
+                    user_agent=user_agent,
+                    requesting_client_id=current_client.id
                 )
             
             logger.info(

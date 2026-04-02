@@ -64,7 +64,9 @@ def test_create_application_rejects_candidate_outside_selected_client():
     db = MagicMock()
 
     with patch("ats_backend.services.application_service.CandidateRepository") as candidate_repo_cls:
-        candidate_repo_cls.return_value.get_by_id_for_client.return_value = None
+        candidate_mock = MagicMock()
+        candidate_mock.client_id = uuid4()
+        candidate_repo_cls.return_value.get_by_id.return_value = candidate_mock
 
         with pytest.raises(ValueError, match="Candidate not found for the selected client"):
             service.create_application(

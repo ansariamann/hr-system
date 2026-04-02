@@ -75,7 +75,8 @@ class ApplicationService:
         application_data: ApplicationCreate,
         user_id: Optional[UUID] = None,
         ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
+        user_agent: Optional[str] = None,
+        requesting_client_id: Optional[UUID] = None
     ) -> Application:
         """Create a new application with audit logging and real-time events.
         
@@ -98,7 +99,12 @@ class ApplicationService:
             candidate = candidate_repo.get_by_id(db, application_data.candidate_id)
             if not candidate:
                 raise ValueError("Candidate not found")
-            if candidate.client_id != client_id:
+                
+            allowed_clients = {client_id}
+            if requesting_client_id:
+                allowed_clients.add(requesting_client_id)
+                
+            if candidate.client_id not in allowed_clients:
                 raise ValueError("Candidate not found for the selected client")
             if candidate.status == "SELECTED":
                 raise ValueError("Selected candidates cannot be used to create a new application")
