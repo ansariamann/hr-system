@@ -60,7 +60,7 @@ class Settings(BaseSettings):
     imap_username: Optional[str] = Field(default=None, description="IMAP username")
     imap_password: Optional[str] = Field(default=None, description="IMAP password or app password")
     imap_mailbox: str = Field(default="INBOX", description="Mailbox folder to poll")
-    imap_poll_interval_seconds: int = Field(default=60, description="Seconds between IMAP polling runs")
+    imap_poll_interval_seconds: int = Field(default=900, description="Seconds between IMAP polling runs")
     imap_max_messages_per_poll: int = Field(default=25, description="Maximum unread messages to fetch per poll")
     imap_client_id: Optional[str] = Field(default=None, description="Client UUID associated with the IMAP mailbox")
     

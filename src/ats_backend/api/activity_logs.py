@@ -1,10 +1,12 @@
 """Activity Log API endpoints."""
 
-from typing import List
+from typing import List, Dict, Any
 from datetime import date, datetime, time, timedelta
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from pydantic import BaseModel, Field
 import structlog
 
 from ats_backend.core.database import get_db
@@ -17,6 +19,14 @@ from ats_backend.schemas.activity_log import ActivityLogResponse
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/activity-logs", tags=["activity-logs"])
+
+
+class ActivityTrackRequest(BaseModel):
+    """Payload for recording ad-hoc dashboard activity."""
+
+    action_type: str = Field(..., min_length=1, max_length=50)
+    entity_id: UUID | None = None
+    details: Dict[str, Any] | None = None
 
 
 @router.get("", response_model=List[ActivityLogResponse])
@@ -69,6 +79,44 @@ async def get_activity_logs(
         response_logs.append(log_res)
         
     return response_logs
+
+
+@router.post("/track", response_model=ActivityLogResponse, status_code=status.HTTP_201_CREATED)
+async def track_activity(
+    payload: ActivityTrackRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    """Record a user activity event for the authenticated client."""
+    try:
+        log = ActivityLog(
+            client_id=current_client.id,
+            user_id=current_user.id,
+            action_type=payload.action_type,
+            entity_id=payload.entity_id,
+            details=payload.details or {},
+        )
+        db.add(log)
+        db.commit()
+        db.refresh(log)
+
+        response = ActivityLogResponse.model_validate(log)
+        response.user_name = current_user.full_name or current_user.email
+        return response
+    except Exception as exc:
+        db.rollback()
+        logger.error(
+            "Failed to track activity",
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            action_type=payload.action_type,
+            error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to track activity",
+        )
 
 
 @router.delete("/cleanup", status_code=status.HTTP_204_NO_CONTENT)

@@ -26,6 +26,18 @@ from ats_backend.core.logging import performance_logger, system_logger
 
 logger = structlog.get_logger(__name__)
 
+MIN_IMAP_POLL_INTERVAL_SECONDS = 15 * 60
+imap_poll_interval_seconds = max(
+    MIN_IMAP_POLL_INTERVAL_SECONDS,
+    int(settings.imap_poll_interval_seconds),
+)
+if int(settings.imap_poll_interval_seconds) < MIN_IMAP_POLL_INTERVAL_SECONDS:
+    logger.warning(
+        "IMAP poll interval too low; enforcing minimum interval",
+        configured_seconds=int(settings.imap_poll_interval_seconds),
+        enforced_seconds=imap_poll_interval_seconds,
+    )
+
 # Create Celery app with enhanced error handling
 celery_app = Celery(
     "ats_backend",
@@ -108,7 +120,7 @@ celery_app.conf.update(
         },
         'poll-imap-inbox': {
             'task': 'ats_backend.workers.email_tasks.poll_imap_inbox',
-            'schedule': float(settings.imap_poll_interval_seconds),
+            'schedule': float(imap_poll_interval_seconds),
         },
         'cleanup-failed-jobs': {
             'task': 'ats_backend.workers.email_tasks.cleanup_failed_jobs_all_clients',
