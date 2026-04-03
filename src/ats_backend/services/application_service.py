@@ -68,6 +68,22 @@ class ApplicationService:
             return
         from ats_backend.services.job_service import JobService
         JobService.sync_job_vacancy(db, job_id)
+
+    @staticmethod
+    def _has_filled_application_for_job(
+        db: Session,
+        job_id: UUID,
+        exclude_application_id: Optional[UUID] = None,
+    ) -> bool:
+        """Return True when a job already has a non-deleted filled application."""
+        query = db.query(Application.id).filter(
+            Application.job_id == job_id,
+            Application.deleted_at.is_(None),
+            Application.status.in_(["HIRED", "SELECTED"]),
+        )
+        if exclude_application_id is not None:
+            query = query.filter(Application.id != exclude_application_id)
+        return query.first() is not None
     
     def create_application(
         self,
@@ -146,7 +162,7 @@ class ApplicationService:
                 )
                 if not job:
                     raise ValueError("Job not found for the selected client")
-                if not job.vacant:
+                if not job.vacant or self._has_filled_application_for_job(db, job_id):
                     raise ValueError("Selected job is no longer vacant")
                 application_payload["job_title"] = job.title
 
@@ -335,6 +351,7 @@ class ApplicationService:
             # Only update fields that are provided
             update_data = application_data.dict(exclude_unset=True)
             old_job_id = old_application.job_id
+            target_job_id = update_data.get("job_id", old_job_id)
             if "job_id" in update_data:
                 job_id = update_data.get("job_id")
                 if job_id is None:
@@ -347,12 +364,29 @@ class ApplicationService:
                     )
                     if not job:
                         raise ValueError("Job not found for the selected client")
-                    if not job.vacant and job_id != old_job_id:
+                    if (
+                        job_id != old_job_id
+                        and (
+                            not job.vacant
+                            or self._has_filled_application_for_job(db, job_id)
+                        )
+                    ):
                         raise ValueError("Selected job is no longer vacant")
                     update_data["job_title"] = job.title
             if "status" in update_data:
                 update_data["status"] = normalize_application_status(update_data["status"])
                 update_data["status_updated_at"] = datetime.utcnow()
+            target_status = update_data.get("status", old_application.status)
+            if (
+                target_job_id is not None
+                and target_status in {"HIRED", "SELECTED"}
+                and self._has_filled_application_for_job(
+                    db,
+                    target_job_id,
+                    exclude_application_id=old_application.id,
+                )
+            ):
+                raise ValueError("Selected job already has a hired candidate and is filled")
             
             application = self.repository.update_with_audit(
                 db=db,

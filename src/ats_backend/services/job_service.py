@@ -147,7 +147,7 @@ class JobService:
                 and_(
                     Application.job_id == job_id,
                     Application.deleted_at.is_(None),
-                    Application.status == "HIRED",
+                    Application.status.in_(["HIRED", "SELECTED"]),
                 )
             )
             .first()

@@ -60,7 +60,11 @@ def list_jobs(
         if not client:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
 
-    effective_client_id = requested_client_id or current_user.client_id
+    if user_role in privileged_roles:
+        # HR roles can view all jobs unless they explicitly scope to one client.
+        effective_client_id = requested_client_id
+    else:
+        effective_client_id = requested_client_id or current_user.client_id
 
     list_kwargs = {
         "db": db,
@@ -78,10 +82,96 @@ def list_jobs(
         "min_salary_lpa": min_salary_lpa,
         "max_salary_lpa": max_salary_lpa,
         "sort": sort,
-        "include_filled": include_filled,
+        "include_filled": include_filled or user_role in privileged_roles,
         "skip": skip,
         "limit": limit,
     }
+
+    if user_role in privileged_roles and effective_client_id is None:
+        # RLS enforces one client context at a time, so aggregate client-scoped results.
+        all_client_ids = [client.id for client in db.query(Client).all()]
+        if not all_client_ids:
+            return []
+
+        per_client_kwargs = {
+            **list_kwargs,
+            "skip": 0,
+            "limit": max(skip + limit, limit),
+        }
+        combined_jobs: List[Job] = []
+        for tenant_client_id in all_client_ids:
+            with with_client_context(db, tenant_client_id):
+                combined_jobs.extend(
+                    service.list_jobs(
+                        **{
+                            **per_client_kwargs,
+                            "client_id": tenant_client_id,
+                        }
+                    )
+                )
+
+        sort_value = (sort or "").strip().lower() or "newest"
+        if sort_value == "salary_desc":
+            combined_jobs.sort(
+                key=lambda job: (
+                    job.salary_lpa is None,
+                    -(float(job.salary_lpa) if job.salary_lpa is not None else 0.0),
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        elif sort_value == "salary_asc":
+            combined_jobs.sort(
+                key=lambda job: (
+                    job.salary_lpa is None,
+                    float(job.salary_lpa) if job.salary_lpa is not None else 0.0,
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        elif sort_value == "exp_desc":
+            combined_jobs.sort(
+                key=lambda job: (
+                    job.experience_required is None,
+                    -(job.experience_required if job.experience_required is not None else 0),
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        elif sort_value == "exp_asc":
+            combined_jobs.sort(
+                key=lambda job: (
+                    job.experience_required is None,
+                    job.experience_required if job.experience_required is not None else 0,
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        elif sort_value == "location_asc":
+            combined_jobs.sort(
+                key=lambda job: (
+                    job.location is None,
+                    (job.location or "").lower(),
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        elif sort_value == "company_asc":
+            combined_jobs.sort(
+                key=lambda job: (
+                    (job.company_name or "").lower(),
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        else:
+            combined_jobs.sort(
+                key=lambda job: (
+                    -(job.posting_date.toordinal() if job.posting_date else 0),
+                    -(job.created_at.timestamp() if job.created_at else 0.0),
+                )
+            )
+        return combined_jobs[skip: skip + limit]
 
     if (
         user_role in privileged_roles
@@ -276,7 +366,10 @@ def delete_job(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete a job posting."""
+    """Delete a job posting.
+
+    For client users, this is treated as a soft delete (close job) so HR retains visibility.
+    """
     allowed_roles = {"hr_admin", "hr_recruiter", "client_admin"}
     user_role = (current_user.role or "").lower()
     if user_role not in allowed_roles:
@@ -289,14 +382,38 @@ def delete_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    JobService.delete_job(db, job)
-    
-    activity_log = ActivityLog(
-        client_id=job.client_id,
-        user_id=current_user.id,
-        action_type="JOB_DELETED",
-        entity_id=job_id,
-        details={"job_id": str(job_id), "title": job.title, "company_name": job.company_name}
-    )
+    if user_role == "client_admin":
+        job = JobService.update_job(
+            db,
+            job,
+            {
+                "status": "CLOSED",
+                "vacant": False,
+                "closing_date": job.closing_date or date.today(),
+            },
+        )
+        activity_log = ActivityLog(
+            client_id=job.client_id,
+            user_id=current_user.id,
+            action_type="JOB_CLOSED_BY_CLIENT",
+            entity_id=job_id,
+            details={
+                "job_id": str(job_id),
+                "title": job.title,
+                "company_name": job.company_name,
+                "status": job.status,
+                "vacant": job.vacant,
+                "closing_date": job.closing_date.isoformat() if job.closing_date else None,
+            },
+        )
+    else:
+        JobService.delete_job(db, job)
+        activity_log = ActivityLog(
+            client_id=job.client_id,
+            user_id=current_user.id,
+            action_type="JOB_DELETED",
+            entity_id=job_id,
+            details={"job_id": str(job_id), "title": job.title, "company_name": job.company_name},
+        )
     db.add(activity_log)
     db.commit()
