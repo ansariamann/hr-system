@@ -3,7 +3,7 @@
 ## Implementation Summary
 
 I've successfully implemented all three major improvements to your candidate management interface:
-
+PS C:\Users\amana\Desktop\hr-system> docker-compose up -d --build
 ---
 Admin Email: client.admin@amanasoft.com
 Admin Password: VF@2eJ#Apwvk
