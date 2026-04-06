@@ -16,7 +16,7 @@ class Candidate(Base):
     __tablename__ = "candidates"
     
     id = Column(GUID(), primary_key=True, default=uuid4)
-    client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
+    client_id = Column(GUID(), ForeignKey("clients.id"), nullable=True)
     name = Column(String(255), nullable=False)
     email = Column(String(255), nullable=True)
     phone = Column(String(50), nullable=True)

@@ -131,6 +131,20 @@ class TestDatabaseSchema:
         assert candidate.total_experience_years is None
         assert candidate.notice_period_days is None
 
+    def test_candidate_creation_allows_blank_client_until_application(self, db_session):
+        """Candidates can exist without a client assignment before application."""
+        candidate = Candidate(
+            client_id=None,
+            name="Unassigned Candidate",
+            email="unassigned@example.com",
+        )
+
+        db_session.add(candidate)
+        db_session.commit()
+
+        assert candidate.id is not None
+        assert candidate.client_id is None
+
     def test_job_creation(self, db_session, sample_client):
         """Test job model creation with core recruitment attributes."""
         job = Job(
@@ -313,13 +327,14 @@ class TestDatabaseSchema:
             email="selected.employee@example.com",
             phone="+1234567890",
         )
+        db_session.add(candidate)
+        db_session.flush()
+
         application = Application(
             client_id=sample_client.id,
             candidate_id=candidate.id,
             job_title="Data Analyst",
         )
-        db_session.add(candidate)
-        db_session.flush()
         db_session.add(application)
         db_session.commit()
 

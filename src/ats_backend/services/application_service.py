@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 import structlog
 
 from ats_backend.models.application import Application
+from ats_backend.models.client import Client
 from ats_backend.models.job import Job
 from ats_backend.core.session_context import with_client_context
 from ats_backend.repositories.application import ApplicationRepository
@@ -126,16 +127,27 @@ class ApplicationService:
                         db, application_data.candidate_id, requesting_client_id
                     )
             if not candidate:
+                candidate = candidate_repo.get_by_id(db, application_data.candidate_id)
+            if not candidate:
                 raise ValueError("Candidate not found")
-                
-            allowed_clients = {client_id}
+
+            allowed_existing_clients = {None, client_id}
             if requesting_client_id:
-                allowed_clients.add(requesting_client_id)
-                
-            if candidate.client_id not in allowed_clients:
+                allowed_existing_clients.add(requesting_client_id)
+
+            if candidate.client_id not in allowed_existing_clients:
                 raise ValueError("Candidate not found for the selected client")
             if candidate.status == "SELECTED":
                 raise ValueError("Selected candidates cannot be used to create a new application")
+
+            target_client = db.query(Client).filter(Client.id == client_id).first()
+            if target_client is None:
+                raise ValueError("Target client not found")
+
+            if candidate.client_id != client_id:
+                candidate.client_id = client_id
+                candidate.updated_at = datetime.utcnow()
+            candidate.selected_client_name = target_client.name
 
             previous_applications = (
                 db.query(Application)

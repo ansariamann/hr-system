@@ -38,6 +38,7 @@ class CandidateRepository(AuditedRepository[Candidate]):
         self,
         db: Session,
         client_id: UUID,
+        include_unassigned: bool = False,
         name_pattern: Optional[str] = None,
         skills: Optional[List[str]] = None,
         location: Optional[str] = None,
@@ -54,7 +55,10 @@ class CandidateRepository(AuditedRepository[Candidate]):
         limit: int = 100,
     ) -> List[Candidate]:
         """Search candidates with combined filters."""
-        conditions = [Candidate.client_id == client_id]
+        if include_unassigned:
+            conditions = [or_(Candidate.client_id == client_id, Candidate.client_id.is_(None))]
+        else:
+            conditions = [Candidate.client_id == client_id]
 
         if name_pattern:
             pattern = f"%{name_pattern}%"
@@ -143,14 +147,18 @@ class CandidateRepository(AuditedRepository[Candidate]):
         return db.query(Candidate).filter(and_(*conditions)).all()
 
     def get_candidates_with_applications(
-        self, db: Session, client_id: UUID, skip: int = 0, limit: int = 100
+        self, db: Session, client_id: UUID, skip: int = 0, limit: int = 100, include_unassigned: bool = False
     ) -> List[Candidate]:
         from sqlalchemy.orm import joinedload
+
+        candidate_filter = Candidate.client_id == client_id
+        if include_unassigned:
+            candidate_filter = or_(Candidate.client_id == client_id, Candidate.client_id.is_(None))
 
         return (
             db.query(Candidate)
             .options(joinedload(Candidate.applications))
-            .filter(Candidate.client_id == client_id)
+            .filter(candidate_filter)
             .offset(skip)
             .limit(limit)
             .all()

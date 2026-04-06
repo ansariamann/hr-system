@@ -9,7 +9,10 @@ from ats_backend.api.candidates import (
     _get_next_interview_round,
     schedule_interview,
 )
+from ats_backend.models.candidate import Candidate
+from ats_backend.services.candidate_service import CandidateService
 from ats_backend.services.application_service import ApplicationService
+from ats_backend.schemas.candidate import CandidateCreate
 from ats_backend.schemas.application import ApplicationCreate
 
 
@@ -77,6 +80,67 @@ def test_create_application_rejects_candidate_outside_selected_client():
                     status="RECEIVED",
                 ),
             )
+
+
+def test_create_candidate_keeps_client_blank_until_application():
+    service = CandidateService()
+    db = MagicMock()
+
+    with patch.object(service.repository, "create") as create_candidate:
+        create_candidate.return_value = Candidate(name="Blank Client", client_id=None)
+        with patch.object(service.repository.audit_logger, "log_create"):
+
+            service.create_candidate(
+                db=db,
+                client_id=uuid4(),
+                candidate_data=CandidateCreate(name="Blank Client"),
+            )
+
+    assert create_candidate.call_args.kwargs["client_id"] is None
+
+
+def test_create_application_assigns_candidate_to_target_client_when_unassigned():
+    service = ApplicationService()
+    db = MagicMock()
+    target_client_id = uuid4()
+    candidate_id = uuid4()
+    candidate = SimpleNamespace(
+        id=candidate_id,
+        client_id=None,
+        status="ACTIVE",
+        remark=None,
+        updated_at=None,
+    )
+
+    query = MagicMock()
+    query.filter.return_value = query
+    query.order_by.return_value = query
+    query.all.return_value = []
+    db.query.return_value = query
+
+    with patch("ats_backend.services.application_service.CandidateRepository") as candidate_repo_cls:
+        with patch.object(service.repository, "create_with_audit") as create_with_audit:
+            create_with_audit.return_value = SimpleNamespace(
+                id=uuid4(),
+                candidate_id=candidate_id,
+                client_id=target_client_id,
+                status="RECEIVED",
+                job_id=None,
+            )
+            candidate_repo = candidate_repo_cls.return_value
+            candidate_repo.get_by_id_for_client.return_value = None
+            candidate_repo.get_by_id.return_value = candidate
+
+            service.create_application(
+                db=db,
+                client_id=target_client_id,
+                application_data=ApplicationCreate(
+                    candidate_id=candidate_id,
+                    status="RECEIVED",
+                ),
+            )
+
+    assert candidate.client_id == target_client_id
 
 
 def test_get_next_interview_round_defaults_to_one_when_no_prior_rounds():

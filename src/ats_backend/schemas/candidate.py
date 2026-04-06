@@ -194,7 +194,7 @@ class CandidateResponse(CandidateBase):
     """Schema for candidate response."""
     
     id: UUID
-    client_id: UUID
+    client_id: Optional[UUID]
     assigned_user_id: Optional[UUID]
     candidate_hash: Optional[str]
     created_at: datetime

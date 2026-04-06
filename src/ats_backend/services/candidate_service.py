@@ -112,18 +112,26 @@ class CandidateService:
         try:
             # Normalize/derive denormalized fields.
             candidate_payload = candidate_data.dict()
+            # Candidates stay unassigned until an application binds them to a client.
+            candidate_payload["client_id"] = None
             if not candidate_payload.get("company"):
                 inferred = infer_company(candidate_payload.get("previous_employment"))
                 if inferred:
                     candidate_payload["company"] = inferred
 
-            candidate = self.repository.create_with_audit(
+            candidate = self.repository.create(
+                db=db,
+                **candidate_payload
+            )
+            self.repository.audit_logger.log_create(
                 db=db,
                 client_id=client_id,
+                table_name=self.repository.model.__tablename__,
+                record_id=candidate.id,
+                new_values=self.repository._model_to_dict(candidate),
                 user_id=user_id,
                 ip_address=ip_address,
                 user_agent=user_agent,
-                **candidate_payload
             )
             
             logger.info(
@@ -189,6 +197,7 @@ class CandidateService:
         self,
         db: Session,
         client_id: UUID,
+        include_unassigned: bool = False,
         name_pattern: Optional[str] = None,
         skills: Optional[List[str]] = None,
         location: Optional[str] = None,
@@ -223,6 +232,7 @@ class CandidateService:
         return self.repository.search(
             db, 
             client_id, 
+            include_unassigned=include_unassigned,
             name_pattern=name_pattern, 
             skills=skills, 
             location=location,
@@ -388,6 +398,7 @@ class CandidateService:
         self,
         db: Session,
         client_id: UUID,
+        include_unassigned: bool = False,
         skip: int = 0,
         limit: int = 100
     ) -> List[Candidate]:
@@ -403,7 +414,7 @@ class CandidateService:
             List of candidates with loaded applications
         """
         return self.repository.get_candidates_with_applications(
-            db, client_id, skip, limit
+            db, client_id, skip, limit, include_unassigned=include_unassigned
         )
     
     def update_candidate_hash(

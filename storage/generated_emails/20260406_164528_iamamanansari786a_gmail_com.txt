@@ -1,0 +1,27 @@
+To: iamamanansari786a@gmail.com
+From: noreply@hr-system.local
+Subject: Your orcl Client Portal Account
+Generated At (UTC): 2026-04-06T16:45:28.991296
+
+HR System Client Portal
+
+Hi AMAN ANSARI,
+
+Your client account for orcl has been created successfully.
+
+Default login credentials:
+- Login Email: client.admin@gmail.com
+- Temporary Password: 6b4xwBXwrNY8
+
+Portal login URL:
+http://localhost:8080/login
+
+Password reset instructions:
+1. Sign in once using the temporary email and password above.
+2. Immediately change your password after login, or use the forgot-password page if needed.
+3. If you want to reset it directly, open the forgot-password page below.
+
+Forgot password URL:
+http://localhost:8080/forgot-password
+
+This message is your client creation acknowledgement and access email from HR System.

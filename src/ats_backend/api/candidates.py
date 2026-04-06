@@ -10,7 +10,7 @@ from pathlib import Path
 import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 import structlog
 
 from ats_backend.core.database import get_db
@@ -39,10 +39,15 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
 CLIENT_SCOPED_ROLES = {"client_user", "client_admin"}
+HR_PRIVILEGED_ROLES = {"hr_admin", "hr_recruiter", "hr_user"}
 
 
 def _is_client_scoped_user(user: User) -> bool:
     return (user.role or "").lower() in CLIENT_SCOPED_ROLES
+
+
+def _is_hr_privileged_user(user: User) -> bool:
+    return (user.role or "").lower() in HR_PRIVILEGED_ROLES
 
 
 def _normalize_resume_fields(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -105,6 +110,26 @@ def _resolve_candidate_for_client_access(
         candidate_client_id=str(application.candidate.client_id),
     )
     return application.candidate
+
+
+def _resolve_candidate_for_dashboard_access(
+    db: Session,
+    candidate_id: UUID,
+    current_user: User,
+    current_client: Client,
+) -> Optional[Candidate]:
+    candidate_service = CandidateService()
+
+    if _is_hr_privileged_user(current_user):
+        candidate = candidate_service.get_candidate_by_id(db, candidate_id)
+        if candidate and candidate.client_id in {None, current_client.id}:
+            return candidate
+
+    return _resolve_candidate_for_client_access(
+        db=db,
+        candidate_id=candidate_id,
+        current_client=current_client,
+    )
 
 
 @router.post("", response_model=CandidateResponse, status_code=status.HTTP_201_CREATED)
@@ -413,6 +438,7 @@ async def list_candidates(
             candidates = candidate_service.search_candidates(
                 db=db,
                 client_id=current_client.id,
+                include_unassigned=_is_hr_privileged_user(current_user),
                 name_pattern=name_pattern,
                 skills=skills_list,
                 location=location or city,
@@ -483,9 +509,10 @@ async def get_candidate(
             client_id=str(current_client.id),
             candidate_id=str(candidate_id)
         ):
-            candidate = _resolve_candidate_for_client_access(
+            candidate = _resolve_candidate_for_dashboard_access(
                 db=db,
                 candidate_id=candidate_id,
+                current_user=current_user,
                 current_client=current_client,
             )
             
@@ -556,8 +583,11 @@ async def update_candidate(
             user_agent = request.headers.get("user-agent")
             
             candidate_service = CandidateService()
-            existing_candidate = candidate_service.get_candidate_by_id_for_client(
-                db, candidate_id, current_client.id
+            existing_candidate = _resolve_candidate_for_dashboard_access(
+                db=db,
+                candidate_id=candidate_id,
+                current_user=current_user,
+                current_client=current_client,
             )
             if not existing_candidate:
                 raise HTTPException(
@@ -580,7 +610,7 @@ async def update_candidate(
             candidate = candidate_service.update_candidate(
                 db=db,
                 candidate_id=candidate_id,
-                client_id=current_client.id,
+                client_id=existing_candidate.client_id or current_client.id,
                 candidate_data=candidate_data,
                 user_id=current_user.id,
                 ip_address=ip_address,
@@ -655,8 +685,11 @@ async def delete_candidate(
             user_agent = request.headers.get("user-agent")
             
             candidate_service = CandidateService()
-            existing_candidate = candidate_service.get_candidate_by_id_for_client(
-                db, candidate_id, current_client.id
+            existing_candidate = _resolve_candidate_for_dashboard_access(
+                db=db,
+                candidate_id=candidate_id,
+                current_user=current_user,
+                current_client=current_client,
             )
             if not existing_candidate:
                 raise HTTPException(
@@ -673,7 +706,7 @@ async def delete_candidate(
             deleted = candidate_service.delete_candidate(
                 db=db,
                 candidate_id=candidate_id,
-                client_id=current_client.id,
+                client_id=existing_candidate.client_id or current_client.id,
                 user_id=current_user.id,
                 ip_address=ip_address,
                 user_agent=user_agent
@@ -953,9 +986,19 @@ async def get_candidate_by_email(
             email=email
         ):
             candidate_service = CandidateService()
-            candidate = candidate_service.get_candidate_by_email(
-                db, current_client.id, email
-            )
+            if _is_hr_privileged_user(current_user):
+                candidate = (
+                    db.query(Candidate)
+                    .filter(
+                        Candidate.email == email,
+                        or_(Candidate.client_id == current_client.id, Candidate.client_id.is_(None)),
+                    )
+                    .first()
+                )
+            else:
+                candidate = candidate_service.get_candidate_by_email(
+                    db, current_client.id, email
+                )
             
             if not candidate:
                 raise HTTPException(

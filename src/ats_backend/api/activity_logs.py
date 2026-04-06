@@ -20,7 +20,7 @@ from ats_backend.schemas.activity_log import ActivityLogResponse
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/activity-logs", tags=["activity-logs"])
-HR_PRIVILEGED_ROLES = {"hr_admin", "hr_recruiter"}
+HR_PRIVILEGED_ROLES = {"hr_admin", "hr_recruiter", "hr_user"}
 
 
 class ActivityTrackRequest(BaseModel):
