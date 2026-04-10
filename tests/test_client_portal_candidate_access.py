@@ -12,7 +12,7 @@ from ats_backend.api.candidates import (
 from ats_backend.models.candidate import Candidate
 from ats_backend.services.candidate_service import CandidateService
 from ats_backend.services.application_service import ApplicationService
-from ats_backend.schemas.candidate import CandidateCreate
+from ats_backend.schemas.candidate import CandidateCreate, CandidateUpdate
 from ats_backend.schemas.application import ApplicationCreate
 
 
@@ -141,6 +141,84 @@ def test_create_application_assigns_candidate_to_target_client_when_unassigned()
             )
 
     assert candidate.client_id == target_client_id
+
+
+def test_update_candidate_allows_unassigned_candidate_fallback():
+    service = CandidateService()
+    db = MagicMock()
+    candidate_id = uuid4()
+    request_client_id = uuid4()
+    unassigned_candidate = SimpleNamespace(id=candidate_id, client_id=None)
+    updated_candidate = SimpleNamespace(id=candidate_id, client_id=None, name="Updated Name")
+
+    with patch.object(service.repository, "get_by_id_for_client", return_value=None):
+        with patch.object(service.repository, "get_by_id", return_value=unassigned_candidate):
+            with patch.object(service.repository, "update_with_audit", return_value=updated_candidate) as update_with_audit:
+                result = service.update_candidate(
+                    db=db,
+                    candidate_id=candidate_id,
+                    client_id=request_client_id,
+                    candidate_data=CandidateUpdate(name="Updated Name"),
+                    user_id=uuid4(),
+                )
+
+    assert result is updated_candidate
+    assert update_with_audit.call_count == 1
+    assert update_with_audit.call_args.kwargs["id"] == candidate_id
+    assert update_with_audit.call_args.kwargs["client_id"] == request_client_id
+
+
+def test_delete_candidate_allows_unassigned_candidate_fallback():
+    service = CandidateService()
+    db = MagicMock()
+    candidate_id = uuid4()
+    request_client_id = uuid4()
+    unassigned_candidate = SimpleNamespace(id=candidate_id, client_id=None)
+
+    query = MagicMock()
+    query.filter.return_value = query
+    query.first.return_value = None
+    db.query.return_value = query
+
+    with patch.object(service.repository, "get_by_id_for_client", return_value=None):
+        with patch.object(service.repository, "get_by_id", return_value=unassigned_candidate):
+            with patch.object(service.repository, "delete_with_audit", return_value=True) as delete_with_audit:
+                result = service.delete_candidate(
+                    db=db,
+                    candidate_id=candidate_id,
+                    client_id=request_client_id,
+                    user_id=uuid4(),
+                )
+
+    assert result is True
+    assert delete_with_audit.call_count == 1
+    assert delete_with_audit.call_args.kwargs["id"] == candidate_id
+    assert delete_with_audit.call_args.kwargs["client_id"] == request_client_id
+
+
+def test_delete_candidate_rejects_when_candidate_is_assigned():
+    service = CandidateService()
+    db = MagicMock()
+    candidate_id = uuid4()
+    request_client_id = uuid4()
+    candidate = SimpleNamespace(id=candidate_id, client_id=request_client_id)
+
+    query = MagicMock()
+    query.filter.return_value = query
+    query.first.return_value = SimpleNamespace(id=uuid4())
+    db.query.return_value = query
+
+    with patch.object(service.repository, "get_by_id_for_client", return_value=candidate):
+        with patch.object(service.repository, "delete_with_audit") as delete_with_audit:
+            with pytest.raises(ValueError, match="already assigned"):
+                service.delete_candidate(
+                    db=db,
+                    candidate_id=candidate_id,
+                    client_id=request_client_id,
+                    user_id=uuid4(),
+                )
+
+    delete_with_audit.assert_not_called()
 
 
 def test_get_next_interview_round_defaults_to_one_when_no_prior_rounds():

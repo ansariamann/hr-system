@@ -277,6 +277,13 @@ class CandidateService:
             # Scope the update to the candidate's client first.
             candidate = self.repository.get_by_id_for_client(db, candidate_id, client_id)
             if not candidate:
+                # HR dashboards can list unassigned candidates (client_id is NULL).
+                # Allow updates for those records as long as the candidate truly exists
+                # and remains unassigned.
+                unassigned_candidate = self.repository.get_by_id(db, candidate_id)
+                if unassigned_candidate and unassigned_candidate.client_id is None:
+                    candidate = unassigned_candidate
+            if not candidate:
                 return None
 
             # Only update fields that are provided
@@ -341,7 +348,27 @@ class CandidateService:
         try:
             candidate = self.repository.get_by_id_for_client(db, candidate_id, client_id)
             if not candidate:
+                # HR dashboards can list unassigned candidates (client_id is NULL).
+                # Allow delete operations to resolve those records as well.
+                unassigned_candidate = self.repository.get_by_id(db, candidate_id)
+                if unassigned_candidate and unassigned_candidate.client_id is None:
+                    candidate = unassigned_candidate
+            if not candidate:
                 return False
+
+            # Prevent deleting candidates that are already assigned/submitted.
+            from ats_backend.models.application import Application
+            has_active_applications = (
+                db.query(Application.id)
+                .filter(
+                    Application.candidate_id == candidate_id,
+                    Application.deleted_at.is_(None),
+                )
+                .first()
+                is not None
+            )
+            if has_active_applications:
+                raise ValueError("Candidate is already assigned and cannot be deleted")
 
             deleted = self.repository.delete_with_audit(
                 db=db,
