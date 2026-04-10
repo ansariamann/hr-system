@@ -76,8 +76,6 @@ class DataExtractor:
             re.compile(r"\b(?:dob|date of birth)\s*[:\-]?\s*(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})\b", re.IGNORECASE),
             re.compile(r"\b(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{4})\b"),
         ]
-        self.present_address_pattern = re.compile(r"\b(?:present|current)\s+address\s*[:\-]?\s*(.+)", re.IGNORECASE)
-        self.permanent_address_pattern = re.compile(r"\bpermanent\s+address\s*[:\-]?\s*(.+)", re.IGNORECASE)
         self.ctc_patterns = {
             "current": re.compile(r"\b(?:current|present)\s+ctc\s*[:\-]?\s*([0-9][0-9.,]*(?:\s*(?:lpa|lac|lakh|lakhs|cr|crore|crores))?)", re.IGNORECASE),
             "expected": re.compile(r"\b(?:expected)\s+ctc\s*[:\-]?\s*([0-9][0-9.,]*(?:\s*(?:lpa|lac|lakh|lakhs|cr|crore|crores))?)", re.IGNORECASE),
@@ -99,11 +97,8 @@ class DataExtractor:
         skills = self._extract_skills(cleaned_text)
         salary_info = self._extract_salary_info(text)
         date_of_birth = self._extract_date_of_birth(text)
-        present_address, permanent_address = self._extract_addresses(text)
         previous_employment = self._extract_previous_employment(text)
         key_skill = ", ".join([skill.name for skill in skills[:8]]) if skills else None
-        if present_address and not contact_info.location:
-            contact_info.location = present_address.split(",")[0].strip()
         
         # Extract education using the original text (preserving newlines)
         education = self._extract_education(text)
@@ -115,8 +110,6 @@ class DataExtractor:
             'skills': skills,
             'salary_info': salary_info,
             'date_of_birth': date_of_birth,
-            'present_address': present_address,
-            'permanent_address': permanent_address,
             'previous_employment': previous_employment,
             'key_skill': key_skill,
             'parsing_method': 'text_extraction',
@@ -348,32 +341,6 @@ class DataExtractor:
                     except ValueError:
                         continue
         return None
-
-    def _extract_addresses(self, text: str):
-        present_address = None
-        permanent_address = None
-        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-
-        for line in lines:
-            if not present_address:
-                match = self.present_address_pattern.search(line)
-                if match:
-                    present_address = match.group(1).strip(" ,.-")
-            if not permanent_address:
-                match = self.permanent_address_pattern.search(line)
-                if match:
-                    permanent_address = match.group(1).strip(" ,.-")
-            if present_address and permanent_address:
-                break
-
-        if not present_address:
-            generic = next((ln for ln in lines if "address" in ln.lower() and "email" not in ln.lower()), None)
-            if generic:
-                parts = re.split(r"address\s*[:\-]?", generic, flags=re.IGNORECASE)
-                if len(parts) > 1 and parts[1].strip():
-                    present_address = parts[1].strip(" ,.-")
-
-        return present_address, permanent_address
 
     def _extract_salary_info(self, text: str):
         current_ctc = None

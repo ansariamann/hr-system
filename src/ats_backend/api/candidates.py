@@ -273,8 +273,6 @@ async def upload_resume(
                 phone=candidate_data_dict.get("phone"),
                 company=_infer_company_from_payload(candidate_data_dict),
                 location=candidate_data_dict.get("location"),
-                present_address=candidate_data_dict.get("present_address"),
-                permanent_address=candidate_data_dict.get("permanent_address"),
                 date_of_birth=candidate_data_dict.get("date_of_birth"),
                 previous_employment=candidate_data_dict.get("previous_employment"),
                 key_skill=candidate_data_dict.get("key_skill"),

@@ -1,0 +1,27 @@
+To: iamamanansari786a@gmail.com
+From: noreply@hr-system.local
+Subject: Your apple Client Portal Account
+Generated At (UTC): 2026-04-10T18:47:35.256980
+
+HR System Client Portal
+
+Hi AMAN ANSARI,
+
+Your client account for apple has been created successfully.
+
+Default login credentials:
+- Login Email: client.admin1@gmail.com
+- Temporary Password: P@$%UP#9Vk%#
+
+Portal login URL:
+http://localhost:8080/login
+
+Password reset instructions:
+1. Sign in once using the temporary email and password above.
+2. Immediately change your password after login, or use the forgot-password page if needed.
+3. If you want to reset it directly, open the forgot-password page below.
+
+Forgot password URL:
+http://localhost:8080/forgot-password
+
+This message is your client creation acknowledgement and access email from HR System.

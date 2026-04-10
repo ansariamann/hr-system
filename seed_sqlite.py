@@ -24,8 +24,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1001",
         "company": "Nova Systems",
         "location": "New York",
-        "present_address": "221 West 32nd Street, New York, NY",
-        "permanent_address": "18 Pine Road, Albany, NY",
         "date_of_birth": "1993-04-12",
         "previous_employment": [
             {"company": "Nova Systems", "title": "Senior Python Developer", "start_date": "2022-04-01", "end_date": "Present"},
@@ -53,8 +51,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1002",
         "company": "CloudPeak",
         "location": "San Francisco",
-        "present_address": "900 Market Street, San Francisco, CA",
-        "permanent_address": "17 Lake View Ave, Sacramento, CA",
         "date_of_birth": "1990-09-08",
         "previous_employment": [
             {"company": "CloudPeak", "title": "Platform Engineer", "start_date": "2021-08-01", "end_date": "Present"},
@@ -83,8 +79,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1003",
         "company": "PixelForge",
         "location": "London",
-        "present_address": "40 Camden High Street, London",
-        "permanent_address": "14 Kingfisher Lane, Bristol",
         "date_of_birth": "1995-01-17",
         "previous_employment": [
             {"company": "PixelForge", "title": "Frontend Engineer", "start_date": "2023-01-01", "end_date": "Present"},
@@ -112,8 +106,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1004",
         "company": "DataSpring",
         "location": "Remote",
-        "present_address": "Remote - Austin, TX",
-        "permanent_address": "19 Cedar Point, Austin, TX",
         "date_of_birth": "1992-11-03",
         "previous_employment": [
             {"company": "DataSpring", "title": "Data Engineer", "start_date": "2022-03-01", "end_date": "Present"},
@@ -141,8 +133,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1005",
         "company": "BlueOrbit",
         "location": "Berlin",
-        "present_address": "12 Mullerstrasse, Berlin",
-        "permanent_address": "84 River Walk, Hamburg",
         "date_of_birth": "1989-06-22",
         "previous_employment": [
             {"company": "BlueOrbit", "title": "Engineering Manager", "start_date": "2021-11-01", "end_date": "Present"},
@@ -170,8 +160,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1006",
         "company": "DesignMint",
         "location": "Toronto",
-        "present_address": "66 Queen Street West, Toronto",
-        "permanent_address": "21 North Bay Drive, Toronto",
         "date_of_birth": "1996-02-11",
         "previous_employment": [
             {"company": "DesignMint", "title": "Product Designer", "start_date": "2023-02-01", "end_date": "Present"},
@@ -199,8 +187,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1007",
         "company": "FinAxis",
         "location": "Mumbai",
-        "present_address": "BKC, Mumbai, Maharashtra",
-        "permanent_address": "Dadar West, Mumbai, Maharashtra",
         "date_of_birth": "1991-12-30",
         "previous_employment": [
             {"company": "FinAxis", "title": "Full Stack Engineer", "start_date": "2022-07-01", "end_date": "Present"},
@@ -229,8 +215,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1008",
         "company": "RetailPulse",
         "location": "Singapore",
-        "present_address": "1 Raffles Place, Singapore",
-        "permanent_address": "18 Bukit Timah Road, Singapore",
         "date_of_birth": "1994-07-14",
         "previous_employment": [
             {"company": "RetailPulse", "title": "Business Analyst", "start_date": "2021-10-01", "end_date": "Present"},
@@ -258,8 +242,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1009",
         "company": "SecureMesh",
         "location": "Remote",
-        "present_address": "Remote - Madrid, Spain",
-        "permanent_address": "18 Calle Norte, Madrid",
         "date_of_birth": "1988-05-19",
         "previous_employment": [
             {"company": "SecureMesh", "title": "Security Engineer", "start_date": "2020-06-01", "end_date": "Present"},
@@ -287,8 +269,6 @@ SEED_CANDIDATES = [
         "phone": "+1-555-101-1010",
         "company": "HealthBridge",
         "location": "Bangalore",
-        "present_address": "Indiranagar, Bangalore, Karnataka",
-        "permanent_address": "Mysuru Road, Bangalore, Karnataka",
         "date_of_birth": "1997-03-28",
         "previous_employment": [
             {"company": "HealthBridge", "title": "QA Engineer", "start_date": "2023-04-01", "end_date": "Present"},
@@ -316,8 +296,6 @@ SEED_CANDIDATES = [
         "phone": "+91-98765-41001",
         "company": "ScaleGrid",
         "location": "Pune",
-        "present_address": "Baner, Pune, Maharashtra",
-        "permanent_address": "Navi Peth, Pune, Maharashtra",
         "date_of_birth": "1993-08-05",
         "previous_employment": [
             {"company": "ScaleGrid", "title": "Senior Full Stack Engineer", "start_date": "2021-01-01", "end_date": "Present"},
@@ -345,8 +323,6 @@ SEED_CANDIDATES = [
         "phone": "+91-98765-41002",
         "company": "InsightLoop",
         "location": "Hyderabad",
-        "present_address": "Madhapur, Hyderabad, Telangana",
-        "permanent_address": "Gachibowli, Hyderabad, Telangana",
         "date_of_birth": "1995-10-10",
         "previous_employment": [
             {"company": "InsightLoop", "title": "Data Analyst", "start_date": "2022-06-01", "end_date": "Present"},
@@ -374,8 +350,6 @@ SEED_CANDIDATES = [
         "phone": "+91-98765-41003",
         "company": "CircuitLabs",
         "location": "Chennai",
-        "present_address": "OMR, Chennai, Tamil Nadu",
-        "permanent_address": "Anna Nagar, Chennai, Tamil Nadu",
         "date_of_birth": "1992-01-29",
         "previous_employment": [
             {"company": "CircuitLabs", "title": "Mobile Engineer", "start_date": "2021-04-01", "end_date": "Present"},
@@ -403,8 +377,6 @@ SEED_CANDIDATES = [
         "phone": "+91-98765-41004",
         "company": "TalentEdge",
         "location": "Delhi",
-        "present_address": "Saket, New Delhi",
-        "permanent_address": "Pitampura, New Delhi",
         "date_of_birth": "1996-06-16",
         "previous_employment": [
             {"company": "TalentEdge", "title": "Recruitment Coordinator", "start_date": "2023-01-01", "end_date": "Present"},
@@ -432,8 +404,6 @@ SEED_CANDIDATES = [
         "phone": "+91-98765-41005",
         "company": "EdgeForge",
         "location": "Kolkata",
-        "present_address": "Salt Lake, Kolkata, West Bengal",
-        "permanent_address": "Howrah, West Bengal",
         "date_of_birth": "1990-12-01",
         "previous_employment": [
             {"company": "EdgeForge", "title": "ML Engineer", "start_date": "2022-02-01", "end_date": "Present"},
@@ -491,8 +461,6 @@ def main():
             "phone": entry["phone"],
             "company": entry["company"],
             "location": entry["location"],
-            "present_address": entry["present_address"],
-            "permanent_address": entry["permanent_address"],
             "date_of_birth": entry["date_of_birth"],
             "previous_employment": json_value(entry["previous_employment"]),
             "key_skill": entry["key_skill"],
@@ -529,8 +497,6 @@ def main():
                     phone = :phone,
                     company = :company,
                     location = :location,
-                    present_address = :present_address,
-                    permanent_address = :permanent_address,
                     date_of_birth = :date_of_birth,
                     previous_employment = :previous_employment,
                     key_skill = :key_skill,
@@ -564,14 +530,14 @@ def main():
                 """
                 INSERT INTO candidates (
                     id, client_id, name, email, phone, company, location,
-                    present_address, permanent_address, date_of_birth,
+                    date_of_birth,
                     previous_employment, key_skill, resume_file_path, resume_url,
                     assigned_user_id, skills, experience, ctc_current, ctc_expected,
                     total_experience_years, notice_period_days, source, linkedin_url, selected_client_name,
                     status, is_blacklisted, is_direct_interview, remark, created_at, updated_at
                 ) VALUES (
                     :id, :client_id, :name, :email, :phone, :company, :location,
-                    :present_address, :permanent_address, :date_of_birth,
+                    :date_of_birth,
                     :previous_employment, :key_skill, :resume_file_path, :resume_url,
                     :assigned_user_id, :skills, :experience, :ctc_current, :ctc_expected,
                     :total_experience_years, :notice_period_days, :source, :linkedin_url, :selected_client_name,

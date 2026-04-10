@@ -16,8 +16,6 @@ class CandidateBase(BaseModel):
     phone: Optional[str] = Field(None, max_length=50, description="Candidate phone number")
     company: Optional[str] = Field(None, max_length=255, description="Most recent / current company")
     location: Optional[str] = Field(None, max_length=255, description="Candidate location/city")
-    present_address: Optional[str] = Field(None, description="Current/present address")
-    permanent_address: Optional[str] = Field(None, description="Permanent address")
     date_of_birth: Optional[date] = Field(None, description="Date of birth")
     previous_employment: Optional[List[Dict[str, Any]]] = Field(None, description="Previous employment history")
     key_skill: Optional[str] = Field(None, description="Key skill summary")
@@ -47,6 +45,7 @@ class CandidateBase(BaseModel):
     is_blacklisted: bool = Field(default=False, description="Whether candidate is blacklisted")
     is_direct_interview: bool = Field(default=False, description="Whether candidate has a direct interview record")
     remark: Optional[str] = Field(None, description="Candidate remarks or notes")
+    other_details: Optional[Dict[str, Any]] = Field(None, description="Other details parsed from resume in JSON format")
     
     @validator('phone')
     def validate_phone(cls, v):
@@ -115,8 +114,6 @@ class CandidateUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     company: Optional[str] = Field(None, max_length=255)
     location: Optional[str] = Field(None, max_length=255)
-    present_address: Optional[str] = None
-    permanent_address: Optional[str] = None
     date_of_birth: Optional[date] = None
     previous_employment: Optional[List[Dict[str, Any]]] = None
     key_skill: Optional[str] = None
@@ -136,6 +133,7 @@ class CandidateUpdate(BaseModel):
     is_blacklisted: Optional[bool] = None
     is_direct_interview: Optional[bool] = None
     remark: Optional[str] = None
+    other_details: Optional[Dict[str, Any]] = None
     
     @validator('phone')
     def validate_phone(cls, v):

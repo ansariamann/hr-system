@@ -23,8 +23,6 @@ class Candidate(Base):
     # Most recent company / current employer (denormalized for fast UI display/search).
     company = Column(String(255), nullable=True)
     location = Column(String(255), nullable=True)
-    present_address = Column(Text, nullable=True)
-    permanent_address = Column(Text, nullable=True)
     date_of_birth = Column(Date, nullable=True)
     previous_employment = Column(JSON, nullable=True)
     key_skill = Column(Text, nullable=True)
@@ -45,6 +43,7 @@ class Candidate(Base):
     is_direct_interview = Column(Boolean, default=False, nullable=False)
     candidate_hash = Column(String(64), nullable=True)
     remark = Column(Text, nullable=True)
+    other_details = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
