@@ -15,6 +15,7 @@ from ats_backend.services.application_service import ApplicationService
 from ats_backend.schemas.candidate import CandidateCreate
 from ats_backend.schemas.application import ApplicationCreate
 from ats_backend.models.activity_log import ActivityLog
+from ats_backend.models.job import Job
 
 logger = structlog.get_logger(__name__)
 
@@ -256,9 +257,22 @@ def process_resume_file(
             )
             
             # Create application linking the candidate to this resume job
+            fallback_job = (
+                db.query(Job)
+                .filter(
+                    Job.client_id == UUID(client_id),
+                    Job.vacant.is_(True),
+                )
+                .order_by(Job.created_at.desc())
+                .first()
+            )
+            if not fallback_job:
+                raise ValueError("No vacant job available for this client to create application")
+
             application_create = ApplicationCreate(
                 candidate_id=candidate.id,
-                job_title="Resume Submission",  # Default job title
+                job_id=fallback_job.id,
+                job_title=fallback_job.title,
                 status="RECEIVED",
                 flagged_for_review=flagged_for_review,
                 flag_reason=flag_reason

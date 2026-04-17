@@ -2,6 +2,7 @@
 
 import time
 import mimetypes
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, Union, Tuple
 import structlog
@@ -104,6 +105,44 @@ class ResumeParser:
 
         normalized_text = "\n".join(line.rstrip() for line in best_text.splitlines())
         return normalized_text, f"psm_{best_mode}"
+
+    def _extract_pdf_hyperlinks(self, file_path: Path) -> list[str]:
+        """Extract hyperlink URLs from PDF annotations (when present)."""
+        urls: list[str] = []
+        try:
+            with open(file_path, "rb") as file:
+                reader = PyPDF2.PdfReader(file)
+                for page in reader.pages:
+                    annotations = page.get("/Annots", [])
+                    for annot_ref in annotations:
+                        try:
+                            annot = annot_ref.get_object()
+                            action = annot.get("/A")
+                            if not action:
+                                continue
+                            uri = action.get("/URI")
+                            if isinstance(uri, str) and uri.strip():
+                                urls.append(uri.strip())
+                        except Exception:
+                            continue
+        except Exception:
+            logger.debug("Failed to extract PDF annotation URLs", file_path=str(file_path))
+
+        # Also normalize/deduplicate any visible URLs.
+        deduped: list[str] = []
+        seen = set()
+        for item in urls:
+            normalized = item.strip()
+            if not normalized:
+                continue
+            if not re.match(r"^https?://", normalized, flags=re.IGNORECASE):
+                normalized = f"https://{normalized}"
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(normalized)
+        return deduped
     
     def parse_file(
         self,
@@ -164,7 +203,14 @@ class ResumeParser:
                 )
             
             # Extract structured data from raw text
-            parsed_data = self.data_extractor.extract_data(parsing_result['text'])
+            extra_links: list[str] = []
+            if content_type == "application/pdf":
+                extra_links = self._extract_pdf_hyperlinks(file_path)
+
+            parsed_data = self.data_extractor.extract_data(
+                parsing_result['text'],
+                extra_links=extra_links,
+            )
             parsed_data['parsing_method'] = parsing_result['method']
             
             # Create parsed resume object

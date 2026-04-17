@@ -76,6 +76,8 @@ class ParsedResume(BaseModel):
     date_of_birth: Optional[date] = Field(None, description="Candidate date of birth")
     previous_employment: List[Dict[str, Any]] = Field(default_factory=list, description="Previous employment entries")
     key_skill: Optional[str] = Field(None, description="Key skill summary")
+    total_experience_years: Optional[Decimal] = Field(None, description="Computed total years of experience")
+    linkedin_url: Optional[str] = Field(None, description="Detected LinkedIn profile URL")
     other_details: Dict[str, Any] = Field(default_factory=dict, description="Other details parsed from resume")
     
     # Raw extracted text
@@ -89,9 +91,49 @@ class ParsedResume(BaseModel):
     
     # Additional structured data
     additional_data: Dict[str, Any] = Field(default_factory=dict)
+
+    def _build_previous_employment_entries(self) -> List[Dict[str, Any]]:
+        if self.previous_employment:
+            return self.previous_employment
+
+        entries: List[Dict[str, Any]] = []
+        for exp in self.experience:
+            if not any([exp.company, exp.position, exp.start_date, exp.end_date, exp.duration]):
+                continue
+            entries.append(
+                {
+                    "company": exp.company,
+                    "position": exp.position,
+                    "start_date": exp.start_date,
+                    "end_date": exp.end_date,
+                    "duration": exp.duration,
+                    "is_current": exp.is_current,
+                    "description": exp.description,
+                }
+            )
+        return entries
+
+    def _infer_company(self, previous_employment: List[Dict[str, Any]]) -> Optional[str]:
+        for exp in self.experience:
+            if exp.is_current and exp.company:
+                return exp.company
+
+        for exp in self.experience:
+            if exp.company:
+                return exp.company
+
+        for item in previous_employment:
+            company = item.get("company")
+            if isinstance(company, str) and company.strip():
+                return company.strip()
+
+        return None
     
     def to_candidate_data(self) -> Dict[str, Any]:
         """Convert parsed resume to candidate creation data."""
+        previous_employment = self._build_previous_employment_entries()
+        inferred_company = self._infer_company(previous_employment)
+
         # Prepare skills in JSONB format
         skills_data = {
             "skills": [skill.name for skill in self.skills],
@@ -148,10 +190,13 @@ class ParsedResume(BaseModel):
             "name": self.contact_info.name,
             "email": self.contact_info.email,
             "phone": self.contact_info.phone,
+            "company": inferred_company,
             "location": self.contact_info.location,
             "date_of_birth": self.date_of_birth,
-            "previous_employment": self.previous_employment,
+            "previous_employment": previous_employment,
             "key_skill": self.key_skill,
+            "total_experience_years": self.total_experience_years,
+            "linkedin_url": self.linkedin_url,
             "skills": skills_data,
             "experience": experience_data,
             "ctc_current": self.salary_info.current_ctc if self.salary_info else None,

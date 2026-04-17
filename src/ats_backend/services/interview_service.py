@@ -74,6 +74,7 @@ class InterviewService:
         candidate: Candidate,
         client_id: UUID,
         company_id: UUID,
+        job_id: UUID,
         interviewer_id: UUID,
         interview_date: datetime,
         position: Optional[str] = None,
@@ -125,6 +126,7 @@ class InterviewService:
                 candidate_id=candidate.id,
                 client_id=client_id,
                 company_id=company_id,
+                job_id=job_id,
                 interviewer_id=interviewer_id,
                 interview_date=normalized_date,
                 position=position.strip() if position else None,
@@ -149,6 +151,7 @@ class InterviewService:
                         entity_id=candidate.id,
                         details={
                             "company_id": str(company_id),
+                            "job_id": str(job_id),
                             "interview_date": normalized_date.isoformat(),
                             "position": position,
                             "skills": self.normalize_skills(skills),
@@ -191,6 +194,7 @@ class InterviewService:
         editor_id: UUID,
         interview_date: Optional[datetime] = None,
         company_id: Optional[UUID] = None,
+        job_id: Optional[UUID] = None,
         position: Optional[str] = None,
         skills: Optional[List[str]] = None,
         notes: Optional[str] = None,
@@ -227,6 +231,8 @@ class InterviewService:
             interview.interview_date = normalized_date
         if company_id is not None:
             interview.company_id = company_id
+        if job_id is not None:
+            interview.job_id = job_id
         if position is not None:
             interview.position = position.strip() or None
         if skills is not None:
@@ -248,6 +254,7 @@ class InterviewService:
                     details={
                         "interview_id": str(interview.id),
                         "company_id": str(interview.company_id),
+                        "job_id": str(interview.job_id) if interview.job_id else None,
                         "interview_date": interview.interview_date.isoformat(),
                         "position": interview.position,
                         "skills": interview.skills,

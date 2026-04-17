@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 import os
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 import structlog
@@ -19,6 +20,7 @@ from ats_backend.auth.models import User
 from ats_backend.models.candidate import Candidate
 from ats_backend.models.client import Client
 from ats_backend.models.application import Application
+from ats_backend.models.job import Job
 from ats_backend.models.activity_log import ActivityLog
 from ats_backend.services.candidate_service import CandidateService
 from ats_backend.services.interview_service import InterviewService
@@ -33,6 +35,7 @@ from ats_backend.schemas.resume_job import ResumeJobCreate
 from ats_backend.resume.parser import ResumeParser
 from ats_backend.core.config import settings
 from ats_backend.core.logging import performance_logger
+from ats_backend.security.abuse_protection import abuse_protection
 
 logger = structlog.get_logger(__name__)
 
@@ -234,6 +237,18 @@ async def upload_resume(
             user_id=str(current_user.id),
             client_id=str(current_client.id)
         ):
+            # Validate upload metadata and size before processing.
+            file.file.seek(0, os.SEEK_END)
+            file_size = file.file.tell()
+            file.file.seek(0)
+            await abuse_protection.validate_file_upload(
+                request=request,
+                filename=file.filename or "resume",
+                content_type=file.content_type or "application/octet-stream",
+                file_size=file_size,
+                client_id=current_client.id,
+            )
+
             # Create uploads directory if not exists
             upload_dir = Path("uploads")
             upload_dir.mkdir(exist_ok=True)
@@ -276,11 +291,14 @@ async def upload_resume(
                 date_of_birth=candidate_data_dict.get("date_of_birth"),
                 previous_employment=candidate_data_dict.get("previous_employment"),
                 key_skill=candidate_data_dict.get("key_skill"),
-                resume_file_path=f"/uploads/{temp_file_name}",
-                resume_url=f"/uploads/{temp_file_name}",
+                total_experience_years=candidate_data_dict.get("total_experience_years"),
+                linkedin_url=candidate_data_dict.get("linkedin_url"),
+                resume_file_path=f"/candidates/files/{temp_file_name}",
+                resume_url=f"/candidates/files/{temp_file_name}",
                 assigned_user_id=current_user.id if _is_client_scoped_user(current_user) else None,
                 skills=candidate_data_dict.get("skills"),
                 experience=candidate_data_dict.get("experience"),
+                other_details=candidate_data_dict.get("other_details"),
                 ctc_current=candidate_data_dict.get("ctc_current"),
                 ctc_expected=candidate_data_dict.get("ctc_expected"),
                 remark=candidate_remark,
@@ -392,6 +410,44 @@ async def upload_resume(
                 os.remove(temp_file_path)
             except Exception as e:
                 logger.warning(f"Failed to remove temp file {temp_file_path}: {e}")
+
+
+@router.get("/files/{file_name}")
+async def get_uploaded_resume_file(
+    file_name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    """Serve uploaded resume files only to authenticated users in the same client."""
+    normalized_name = Path(file_name).name
+    expected_path = f"/candidates/files/{normalized_name}"
+    legacy_path = f"/uploads/{normalized_name}"
+
+    candidate = (
+        db.query(Candidate)
+        .filter(
+            Candidate.client_id == current_client.id,
+            or_(
+                Candidate.resume_url == expected_path,
+                Candidate.resume_file_path == expected_path,
+                Candidate.resume_url == legacy_path,
+                Candidate.resume_file_path == legacy_path,
+            ),
+        )
+        .first()
+    )
+    if not candidate:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    if _is_client_scoped_user(current_user) and candidate.assigned_user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied to this file")
+
+    absolute_path = Path("uploads") / normalized_name
+    if not absolute_path.exists() or not absolute_path.is_file():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    return FileResponse(path=absolute_path, filename=normalized_name)
 
 
 
@@ -1166,6 +1222,7 @@ class DirectInterviewPayload(BaseModel):
     notes: Optional[str] = None
     rating: Optional[int] = None  # 1-5 scale
     company_id: UUID  # Target company for candidate placement
+    job_id: UUID  # Selected vacant job from target client
     
     @field_validator('interview_date')
     @classmethod
@@ -1211,6 +1268,7 @@ class UpdateInterviewPayload(BaseModel):
     notes: Optional[str] = None
     rating: Optional[int] = None
     company_id: Optional[UUID] = None
+    job_id: Optional[UUID] = None
 
     @field_validator('interview_date')
     @classmethod
@@ -1248,6 +1306,7 @@ class InterviewRecordResponse(BaseModel):
     candidate_id: UUID
     client_id: UUID
     company_id: UUID
+    job_id: Optional[UUID] = None
     interviewer_id: UUID
     interview_date: datetime
     position: Optional[str] = None
@@ -1527,6 +1586,26 @@ async def record_direct_interview(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid company_id or company does not belong to current client"
                 )
+            if payload.position is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Position is derived from the selected vacant job and cannot be set manually",
+                )
+
+            job = (
+                db.query(Job)
+                .filter(
+                    Job.id == payload.job_id,
+                    Job.client_id == payload.company_id,
+                    Job.vacant.is_(True),
+                )
+                .first()
+            )
+            if not job:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Selected job must be a vacant job from the selected client",
+                )
 
             interview_service = InterviewService()
             interview_record = interview_service.record_interview(
@@ -1534,9 +1613,10 @@ async def record_direct_interview(
                 candidate=candidate,
                 client_id=current_client.id,
                 company_id=payload.company_id,
+                job_id=payload.job_id,
                 interviewer_id=current_user.id,
                 interview_date=payload.interview_date,
-                position=payload.position,
+                position=job.title,
                 skills=payload.skills,
                 notes=payload.notes,
                 rating=payload.rating,
@@ -1853,6 +1933,30 @@ async def update_interview_record(
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid company_id or company does not belong to current client"
                     )
+            if payload.position is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Position is derived from the selected vacant job and cannot be set manually",
+                )
+
+            target_company_id = payload.company_id or interview.company_id
+            effective_position = None
+            if payload.job_id is not None:
+                job = (
+                    db.query(Job)
+                    .filter(
+                        Job.id == payload.job_id,
+                        Job.client_id == target_company_id,
+                        Job.vacant.is_(True),
+                    )
+                    .first()
+                )
+                if not job:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Selected job must be a vacant job from the selected client",
+                    )
+                effective_position = job.title
 
             interview = interview_service.update_interview(
                 db=db,
@@ -1861,7 +1965,8 @@ async def update_interview_record(
                 editor_id=current_user.id,
                 interview_date=payload.interview_date,
                 company_id=payload.company_id,
-                position=payload.position,
+                job_id=payload.job_id,
+                position=effective_position,
                 skills=payload.skills,
                 notes=payload.notes,
                 rating=payload.rating,

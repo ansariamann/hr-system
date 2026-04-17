@@ -14,6 +14,8 @@ from ats_backend.services.candidate_service import CandidateService
 from ats_backend.services.application_service import ApplicationService
 from ats_backend.schemas.candidate import CandidateCreate, CandidateUpdate
 from ats_backend.schemas.application import ApplicationCreate
+from ats_backend.models.job import Job
+from ats_backend.models.interview_record import InterviewRecord
 
 
 @pytest.mark.asyncio
@@ -77,6 +79,7 @@ def test_create_application_rejects_candidate_outside_selected_client():
                 client_id=uuid4(),
                 application_data=ApplicationCreate(
                     candidate_id=uuid4(),
+                    job_id=uuid4(),
                     status="RECEIVED",
                 ),
             )
@@ -112,11 +115,25 @@ def test_create_application_assigns_candidate_to_target_client_when_unassigned()
         updated_at=None,
     )
 
-    query = MagicMock()
-    query.filter.return_value = query
-    query.order_by.return_value = query
-    query.all.return_value = []
-    db.query.return_value = query
+    application_query = MagicMock()
+    application_query.filter.return_value = application_query
+    application_query.order_by.return_value = application_query
+    application_query.all.return_value = []
+    job_query = MagicMock()
+    job_query.filter.return_value = job_query
+    job_query.first.return_value = SimpleNamespace(id=uuid4(), client_id=target_client_id, title="Backend Engineer", vacant=True)
+    interview_query = MagicMock()
+    interview_query.filter.return_value = interview_query
+    interview_query.first.return_value = SimpleNamespace(id=uuid4())
+
+    def query_side_effect(model, *args, **kwargs):
+        if model is Job:
+            return job_query
+        if model is InterviewRecord.id:
+            return interview_query
+        return application_query
+
+    db.query.side_effect = query_side_effect
 
     with patch("ats_backend.services.application_service.CandidateRepository") as candidate_repo_cls:
         with patch.object(service.repository, "create_with_audit") as create_with_audit:
@@ -136,11 +153,90 @@ def test_create_application_assigns_candidate_to_target_client_when_unassigned()
                 client_id=target_client_id,
                 application_data=ApplicationCreate(
                     candidate_id=candidate_id,
+                    job_id=job_query.first.return_value.id,
                     status="RECEIVED",
                 ),
             )
 
     assert candidate.client_id == target_client_id
+
+
+def test_create_application_allows_handoff_without_interview():
+    service = ApplicationService()
+    db = MagicMock()
+    client_id = uuid4()
+    candidate_id = uuid4()
+    job_id = uuid4()
+    candidate = SimpleNamespace(id=candidate_id, client_id=client_id, status="ACTIVE", is_direct_interview=True)
+
+    with patch("ats_backend.services.application_service.CandidateRepository") as candidate_repo_cls:
+        candidate_repo_cls.return_value.get_by_id_for_client.return_value = candidate
+        with patch.object(service, "_has_filled_application_for_job", return_value=False):
+            with patch.object(service.repository, "create_with_audit") as create_with_audit:
+                create_with_audit.return_value = SimpleNamespace(
+                    id=uuid4(),
+                    candidate_id=candidate_id,
+                    client_id=client_id,
+                    status="RECEIVED",
+                    job_id=job_id,
+                )
+
+            job_query = MagicMock()
+            job_query.filter.return_value = job_query
+            job_query.first.return_value = SimpleNamespace(id=job_id, client_id=client_id, title="QA Engineer", vacant=True)
+            db.query.return_value = job_query
+
+            created = service.create_application(
+                db=db,
+                client_id=client_id,
+                application_data=ApplicationCreate(candidate_id=candidate_id, job_id=job_id, status="RECEIVED"),
+            )
+
+    assert created is not None
+    assert created.job_id == job_id
+
+
+def test_acknowledge_hr_interview_sets_ack_fields_and_status():
+    service = ApplicationService()
+    db = MagicMock()
+    client_id = uuid4()
+    candidate_id = uuid4()
+    user_id = uuid4()
+    application = SimpleNamespace(
+        id=uuid4(),
+        client_id=client_id,
+        candidate_id=candidate_id,
+        status="RECEIVED",
+        hr_interview_acknowledged=False,
+        hr_interview_acknowledged_at=None,
+        hr_interview_acknowledged_by=None,
+        hr_interview_ack_note=None,
+        updated_at=None,
+        status_updated_at=None,
+    )
+    candidate = SimpleNamespace(id=candidate_id, is_direct_interview=True)
+
+    with patch.object(service.repository, "get_by_id", return_value=application):
+        with patch("ats_backend.services.application_service.CandidateRepository") as candidate_repo_cls:
+            candidate_repo_cls.return_value.get_by_id.return_value = candidate
+            interview_query = MagicMock()
+            interview_query.filter.return_value = interview_query
+            interview_query.first.return_value = SimpleNamespace(id=uuid4())
+            db.query.return_value = interview_query
+
+            result = service.acknowledge_hr_interview(
+                db=db,
+                application_id=application.id,
+                client_id=client_id,
+                acknowledged_by=user_id,
+                note="Interview completed successfully",
+            )
+
+    assert result is application
+    assert application.hr_interview_acknowledged is True
+    assert application.hr_interview_acknowledged_by == user_id
+    assert application.hr_interview_ack_note == "Interview completed successfully"
+    assert application.status == "INTERVIEWED"
 
 
 def test_update_candidate_allows_unassigned_candidate_fallback():

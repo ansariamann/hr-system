@@ -94,6 +94,12 @@ class CandidateBase(BaseModel):
             return values
         resume_url = values.get("resume_url")
         resume_file_path = values.get("resume_file_path")
+        if isinstance(resume_url, str) and resume_url.startswith("/uploads/"):
+            resume_url = resume_url.replace("/uploads/", "/candidates/files/", 1)
+            values["resume_url"] = resume_url
+        if isinstance(resume_file_path, str) and resume_file_path.startswith("/uploads/"):
+            resume_file_path = resume_file_path.replace("/uploads/", "/candidates/files/", 1)
+            values["resume_file_path"] = resume_file_path
         if resume_url and not resume_file_path:
             values["resume_file_path"] = resume_url
         if resume_file_path and not resume_url:
@@ -181,6 +187,12 @@ class CandidateUpdate(BaseModel):
             return values
         resume_url = values.get("resume_url")
         resume_file_path = values.get("resume_file_path")
+        if isinstance(resume_url, str) and resume_url.startswith("/uploads/"):
+            resume_url = resume_url.replace("/uploads/", "/candidates/files/", 1)
+            values["resume_url"] = resume_url
+        if isinstance(resume_file_path, str) and resume_file_path.startswith("/uploads/"):
+            resume_file_path = resume_file_path.replace("/uploads/", "/candidates/files/", 1)
+            values["resume_file_path"] = resume_file_path
         if resume_url and not resume_file_path:
             values["resume_file_path"] = resume_url
         if resume_file_path and not resume_url:

@@ -3,7 +3,7 @@
 import re
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import structlog
 
 try:
@@ -84,8 +84,35 @@ class DataExtractor:
             re.compile(r"\b(?:worked at|employed at|company)\s*[:\-]?\s*([A-Z][A-Za-z0-9&.,\-\s]{2,60})", re.IGNORECASE),
             re.compile(r"\bat\s+([A-Z][A-Za-z0-9&.,\-\s]{2,60})", re.IGNORECASE),
         ]
+        self.url_pattern = re.compile(r"\b(?:https?://|www\.)[^\s<>()]+", re.IGNORECASE)
+        self.linkedin_pattern = re.compile(
+            r"(?:(?:https?://)?(?:[a-z]{2,3}\.)?linkedin\.com/"
+            r"(?:(?:in|pub|company)/[A-Za-z0-9%._\-]+(?:/[A-Za-z0-9%._\-]+)*)"
+            r"/?)",
+            re.IGNORECASE,
+        )
+        self.date_range_pattern = re.compile(
+            r"(?P<start>(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{4}|\d{1,2}[/-]\d{4}|\d{4})\s*(?:-|–|—|to)\s*(?P<end>(?:present|current|now|till date|till now|ongoing|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{4}|\d{1,2}[/-]\d{4}|\d{4}))",
+            re.IGNORECASE,
+        )
+        self.unmapped_section_aliases: Dict[str, List[str]] = {
+            "summary": ["summary", "professional summary", "profile", "career summary"],
+            "objective": ["objective", "career objective"],
+            "projects": ["projects", "project experience", "academic projects", "personal projects"],
+            "certifications": ["certifications", "certificates", "licenses"],
+            "achievements": ["achievements", "accomplishments", "awards", "honors"],
+            "publications": ["publications", "research", "papers"],
+            "languages_spoken": ["languages", "language proficiency"],
+            "interests": ["interests", "hobbies", "extracurricular activities"],
+            "volunteering": ["volunteering", "volunteer experience", "community work"],
+        }
+        self.mapped_section_aliases: List[str] = [
+            "experience", "work experience", "employment history", "professional experience",
+            "education", "academic background", "qualifications", "skills", "technical skills",
+            "contact", "personal details", "salary", "ctc", "date of birth",
+        ]
     
-    def extract_data(self, text: str) -> Dict[str, Any]:
+    def extract_data(self, text: str, extra_links: Optional[List[str]] = None) -> Dict[str, Any]:
         """Extract all structured data from resume text."""
         logger.info("Starting data extraction", text_length=len(text))
         
@@ -95,25 +122,41 @@ class DataExtractor:
         # Extract components
         contact_info = self._extract_contact_info(text)
         skills = self._extract_skills(cleaned_text)
+        experience = self._extract_experience(text)
         salary_info = self._extract_salary_info(text)
         date_of_birth = self._extract_date_of_birth(text)
         previous_employment = self._extract_previous_employment(text)
         key_skill = ", ".join([skill.name for skill in skills[:8]]) if skills else None
+        linkedin_url = self._extract_linkedin_url(text, extra_links=extra_links or [])
+        total_experience_years = self._calculate_total_experience_years(experience)
         
         # Extract education using the original text (preserving newlines)
         education = self._extract_education(text)
         
+        extracted_urls = self._extract_urls(text, extra_links=extra_links or [])
+        other_details = self._build_other_details(
+            text=text,
+            urls=extracted_urls,
+            linkedin_url=linkedin_url,
+            education=education,
+            experience=experience,
+            skills=skills,
+        )
+
         result = {
             'contact_info': contact_info,
-            'experience': [],  # Simplified for now
+            'experience': experience,
             'education': education,
             'skills': skills,
             'salary_info': salary_info,
             'date_of_birth': date_of_birth,
             'previous_employment': previous_employment,
             'key_skill': key_skill,
+            'total_experience_years': total_experience_years,
+            'linkedin_url': linkedin_url,
+            'other_details': other_details,
             'parsing_method': 'text_extraction',
-            'confidence_score': self._calculate_confidence_score(contact_info, [], skills, education),
+            'confidence_score': self._calculate_confidence_score(contact_info, experience, skills, education),
         }
         
         logger.info("Data extraction completed", confidence_score=result['confidence_score'])
@@ -306,6 +349,30 @@ class DataExtractor:
             
         return education_entries
 
+    def _extract_experience(self, text: str) -> List[Experience]:
+        """Extract work experience, preferring the explicit Experience section."""
+        entries: List[Experience] = []
+        section_lines = self._extract_section_lines(
+            text,
+            {"experience", "work experience", "employment history", "professional experience", "work history"},
+        )
+
+        if section_lines:
+            entries.extend(self._parse_experience_section(section_lines))
+
+        if entries:
+            return entries[:15]
+
+        lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+        for line in lines:
+            fallback_entry = self._parse_experience_line(line)
+            if fallback_entry:
+                entries.append(fallback_entry)
+            if len(entries) >= 15:
+                break
+
+        return entries
+
     def _extract_skills(self, text: str) -> List[Skill]:
         """Extract skills from text."""
         skills = []
@@ -387,6 +454,33 @@ class DataExtractor:
         return value
 
     def _extract_previous_employment(self, text: str) -> List[Dict[str, Any]]:
+        experience_entries = self._extract_experience(text)
+        if experience_entries:
+            structured_entries: List[Dict[str, Any]] = []
+            seen_companies = set()
+            for exp in experience_entries:
+                company = (exp.company or "").strip()
+                position = (exp.position or "").strip()
+                if not company and not position:
+                    continue
+                dedupe_key = f"{company.lower()}::{position.lower()}"
+                if dedupe_key in seen_companies:
+                    continue
+                seen_companies.add(dedupe_key)
+                structured_entries.append(
+                    {
+                        "company": exp.company,
+                        "position": exp.position,
+                        "start_date": exp.start_date,
+                        "end_date": exp.end_date,
+                        "duration": exp.duration,
+                        "is_current": exp.is_current,
+                        "description": exp.description,
+                    }
+                )
+            if structured_entries:
+                return structured_entries[:10]
+
         entries: List[Dict[str, Any]] = []
         seen = set()
 
@@ -404,6 +498,312 @@ class DataExtractor:
                     return entries
 
         return entries
+
+    def _extract_urls(self, text: str, extra_links: Optional[List[str]] = None) -> List[str]:
+        urls = [u.strip(".,);]}>") for u in self.url_pattern.findall(text)]
+        urls.extend(extra_links or [])
+        normalized: List[str] = []
+        seen = set()
+        for url in urls:
+            if not url:
+                continue
+            if url.lower().startswith("www."):
+                url = f"https://{url}"
+            key = url.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(url)
+        return normalized
+
+    def _extract_linkedin_url(self, text: str, extra_links: Optional[List[str]] = None) -> Optional[str]:
+        sources = [text]
+        if extra_links:
+            sources.append(" ".join(extra_links))
+        for source in sources:
+            matches = self.linkedin_pattern.findall(source)
+            for matched in matches:
+                url = matched.strip(".,);]}>")
+                if not url.lower().startswith("http"):
+                    url = f"https://{url}"
+                lowered = url.lower()
+                if "/in/" in lowered or "/pub/" in lowered:
+                    return url
+                if "/company/" in lowered:
+                    company_url = url
+            if 'company_url' in locals():
+                return company_url
+        return None
+
+    def _extract_section_lines(self, text: str, target_headers: set[str]) -> List[str]:
+        lines = text.splitlines()
+        collected: List[str] = []
+        in_target = False
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                if in_target and collected and collected[-1] != "":
+                    collected.append("")
+                continue
+
+            normalized = re.sub(r"[^a-zA-Z ]", " ", line).strip().lower()
+            normalized = re.sub(r"\s+", " ", normalized)
+            if normalized in target_headers:
+                in_target = True
+                continue
+
+            if in_target and normalized in self.mapped_section_aliases:
+                break
+            if in_target and any(normalized in aliases for aliases in self.unmapped_section_aliases.values()):
+                break
+
+            if in_target:
+                collected.append(line)
+
+        while collected and collected[0] == "":
+            collected.pop(0)
+        while collected and collected[-1] == "":
+            collected.pop()
+        return collected
+
+    def _looks_like_job_title(self, line: str) -> bool:
+        lowered = line.lower()
+        title_tokens = {
+            "engineer", "developer", "manager", "analyst", "consultant", "lead",
+            "architect", "specialist", "intern", "administrator", "designer",
+            "director", "executive", "associate", "officer", "coordinator",
+            "tester", "devops", "qa", "scientist", "recruiter",
+        }
+        return any(token in lowered for token in title_tokens)
+
+    def _looks_like_company_name(self, line: str) -> bool:
+        lowered = line.lower()
+        company_tokens = {"pvt", "ltd", "llc", "inc", "corp", "company", "technologies", "solutions", "systems", "labs"}
+        if any(token in lowered for token in company_tokens):
+            return True
+        words = [word for word in re.split(r"\s+", line) if word]
+        return 1 <= len(words) <= 6 and sum(1 for word in words if word[:1].isupper()) >= max(1, len(words) - 1)
+
+    def _parse_experience_line(self, line: str) -> Optional[Experience]:
+        match = self.date_range_pattern.search(line)
+        if not match:
+            return None
+
+        start_raw = match.group("start")
+        end_raw = match.group("end")
+        before = line[: match.start()].strip(" |,-:")
+        after = line[match.end() :].strip(" |,-:")
+
+        company = before or None
+        position = after or None
+        if company and len(company) > 120:
+            company = company[:120].strip()
+        if position and len(position) > 120:
+            position = position[:120].strip()
+
+        return Experience(
+            company=company,
+            position=position,
+            duration=f"{start_raw} - {end_raw}",
+            start_date=start_raw,
+            end_date=end_raw,
+            is_current=end_raw.lower() in {"present", "current", "now", "till date", "till now", "ongoing"},
+            description=line,
+        )
+
+    def _parse_experience_section(self, lines: List[str]) -> List[Experience]:
+        parsed_entries: List[Experience] = []
+        date_indexes = [index for index, line in enumerate(lines) if self.date_range_pattern.search(line)]
+
+        for seq, date_index in enumerate(date_indexes):
+            date_line = lines[date_index]
+            match = self.date_range_pattern.search(date_line)
+            if not match:
+                continue
+            start_raw = match.group("start")
+            end_raw = match.group("end")
+            prev_date_index = date_indexes[seq - 1] if seq > 0 else -1
+            next_date_index = date_indexes[seq + 1] if seq + 1 < len(date_indexes) else len(lines)
+
+            context_before = [
+                line for line in lines[prev_date_index + 1 : date_index] if line.strip()
+            ]
+            context_after: List[str] = []
+            blank_seen = False
+            for line in lines[date_index + 1 : next_date_index]:
+                if not line.strip():
+                    if context_after:
+                        break
+                    blank_seen = True
+                    continue
+                if blank_seen and context_after:
+                    break
+                context_after.append(line)
+            company: Optional[str] = None
+            position: Optional[str] = None
+            description_lines: List[str] = []
+
+            if context_before:
+                if len(context_before) >= 2:
+                    position = context_before[-2]
+                    company = context_before[-1]
+                    if self._looks_like_company_name(position) and self._looks_like_job_title(company):
+                        position, company = company, position
+                else:
+                    single_line = context_before[-1]
+                    if self._looks_like_job_title(single_line):
+                        position = single_line
+                    elif self._looks_like_company_name(single_line):
+                        company = single_line
+                description_lines.extend(context_before[:-2] if len(context_before) >= 2 else [])
+
+            before = date_line[: match.start()].strip(" |,-:")
+            after = date_line[match.end() :].strip(" |,-:")
+            if not company and before:
+                company = before
+            if not position and after:
+                position = after
+
+            for line in context_after:
+                if not position and self._looks_like_job_title(line):
+                    position = line
+                    continue
+                if not company and self._looks_like_company_name(line):
+                    company = line
+                    continue
+                description_lines.append(line)
+
+            parsed_entries.append(
+                Experience(
+                    company=company[:120].strip() if company else None,
+                    position=position[:120].strip() if position else None,
+                    duration=f"{start_raw} - {end_raw}",
+                    start_date=start_raw,
+                    end_date=end_raw,
+                    is_current=end_raw.lower() in {"present", "current", "now", "till date", "till now", "ongoing"},
+                    description="\n".join([line for line in description_lines if line.strip()]) or date_line,
+                )
+            )
+
+        return parsed_entries
+
+    def _normalize_section_header(self, line: str) -> Optional[str]:
+        cleaned = re.sub(r"[^a-zA-Z ]", " ", line).strip().lower()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        if not cleaned or len(cleaned.split()) > 5:
+            return None
+
+        for canonical, aliases in self.unmapped_section_aliases.items():
+            if cleaned in aliases:
+                return canonical
+
+        if cleaned in self.mapped_section_aliases:
+            return "__mapped__"
+
+        return None
+
+    def _extract_unmapped_sections(self, text: str) -> Dict[str, Any]:
+        lines = [line.rstrip() for line in text.splitlines()]
+        sections: Dict[str, List[str]] = {}
+        current_section: Optional[str] = None
+
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                if current_section and sections.get(current_section):
+                    last_value = sections[current_section][-1]
+                    if last_value != "":
+                        sections[current_section].append("")
+                continue
+
+            header_key = self._normalize_section_header(line)
+            if header_key:
+                current_section = None if header_key == "__mapped__" else header_key
+                if current_section:
+                    sections.setdefault(current_section, [])
+                continue
+
+            if current_section:
+                sections.setdefault(current_section, []).append(line)
+
+        normalized_sections: Dict[str, Any] = {}
+        for key, values in sections.items():
+            trimmed_lines = values[:]
+            while trimmed_lines and trimmed_lines[0] == "":
+                trimmed_lines.pop(0)
+            while trimmed_lines and trimmed_lines[-1] == "":
+                trimmed_lines.pop()
+            if not trimmed_lines:
+                continue
+
+            normalized_sections[key] = {
+                "text": "\n".join(trimmed_lines),
+                "items": [value for value in trimmed_lines if value],
+            }
+
+        return normalized_sections
+
+    def _build_other_details(
+        self,
+        text: str,
+        urls: List[str],
+        linkedin_url: Optional[str],
+        education: List[Education],
+        experience: List[Experience],
+        skills: List[Skill],
+    ) -> Dict[str, Any]:
+        details: Dict[str, Any] = {}
+        details["raw_text_excerpt"] = text[:2000]
+        details["detected_urls"] = urls
+        non_linkedin_urls = [u for u in urls if "linkedin.com" not in u.lower()]
+        if non_linkedin_urls:
+            details["profile_links"] = non_linkedin_urls
+        if linkedin_url:
+            details["linkedin_detected"] = True
+        details["parsed_counts"] = {
+            "education": len(education),
+            "experience": len(experience),
+            "skills": len(skills),
+        }
+        unmapped_sections = self._extract_unmapped_sections(text)
+        if unmapped_sections:
+            details["unmapped_resume_sections"] = unmapped_sections
+        return details
+
+    def _parse_month_year(self, value: str) -> Optional[datetime]:
+        raw = (value or "").strip().lower()
+        if not raw:
+            return None
+        raw = raw.replace(".", "")
+        if raw in {"present", "current", "now", "till date", "till now", "ongoing"}:
+            return datetime.utcnow()
+
+        for fmt in ("%b %Y", "%B %Y", "%m/%Y", "%m-%Y", "%Y"):
+            try:
+                return datetime.strptime(raw, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def _calculate_total_experience_years(self, experience_entries: List[Experience]) -> Optional[Decimal]:
+        if not experience_entries:
+            return None
+
+        total_months = 0
+        for item in experience_entries:
+            start = self._parse_month_year(item.start_date or "")
+            end = self._parse_month_year(item.end_date or "")
+            if not start or not end:
+                continue
+            months = (end.year - start.year) * 12 + (end.month - start.month)
+            if months < 0:
+                continue
+            total_months += max(1, months)
+
+        if total_months <= 0:
+            return None
+        return (Decimal(total_months) / Decimal(12)).quantize(Decimal("0.01"))
     
     def _calculate_confidence_score(self, contact_info: ContactInfo, experience: List[Experience], skills: List[Skill], education: List[Education]) -> float:
         """Calculate confidence score based on extracted data quality."""

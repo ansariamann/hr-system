@@ -11,6 +11,7 @@ import structlog
 from ats_backend.models.application import Application
 from ats_backend.models.client import Client
 from ats_backend.models.job import Job
+from ats_backend.models.interview_record import InterviewRecord
 from ats_backend.core.session_context import with_client_context
 from ats_backend.repositories.application import ApplicationRepository
 from ats_backend.repositories.candidate import CandidateRepository
@@ -166,17 +167,19 @@ class ApplicationService:
             if "status" in application_payload:
                 application_payload["status"] = normalize_application_status(application_payload["status"])
             job_id = application_payload.get("job_id")
-            if job_id is not None:
-                job = (
-                    db.query(Job)
-                    .filter(Job.id == job_id, Job.client_id == client_id)
-                    .first()
-                )
-                if not job:
-                    raise ValueError("Job not found for the selected client")
-                if not job.vacant or self._has_filled_application_for_job(db, job_id):
-                    raise ValueError("Selected job is no longer vacant")
-                application_payload["job_title"] = job.title
+            if job_id is None:
+                raise ValueError("A job must be selected from available client jobs")
+
+            job = (
+                db.query(Job)
+                .filter(Job.id == job_id, Job.client_id == client_id)
+                .first()
+            )
+            if not job:
+                raise ValueError("Job not found for the selected client")
+            if not job.vacant or self._has_filled_application_for_job(db, job_id):
+                raise ValueError("Selected job is no longer vacant")
+            application_payload["job_title"] = job.title
 
             if user_id and not application_payload.get("applied_by_user_id"):
                 application_payload["applied_by_user_id"] = user_id
@@ -784,3 +787,47 @@ class ApplicationService:
         
         logger.debug("Application statistics retrieved", client_id=str(client_id), stats=stats)
         return stats
+
+    def acknowledge_hr_interview(
+        self,
+        db: Session,
+        application_id: UUID,
+        client_id: UUID,
+        acknowledged_by: UUID,
+        note: Optional[str] = None,
+    ) -> Optional[Application]:
+        """Acknowledge that HR interview is complete and candidate is ready for client review."""
+        application = self.repository.get_by_id(db, application_id)
+        if not application or application.client_id != client_id:
+            return None
+
+        candidate = CandidateRepository().get_by_id(db, application.candidate_id)
+        if not candidate:
+            raise ValueError("Candidate not found for application")
+
+        if not candidate.is_direct_interview:
+            raise ValueError("Candidate has no direct interview record")
+
+        interview_exists = (
+            db.query(InterviewRecord.id)
+            .filter(
+                InterviewRecord.candidate_id == application.candidate_id,
+                InterviewRecord.client_id == client_id,
+                InterviewRecord.company_id == client_id,
+                InterviewRecord.deleted_at.is_(None),
+            )
+            .first()
+            is not None
+        )
+        if not interview_exists:
+            raise ValueError("Direct interview record is required before acknowledgement")
+
+        application.hr_interview_acknowledged = True
+        application.hr_interview_acknowledged_at = datetime.utcnow()
+        application.hr_interview_acknowledged_by = acknowledged_by
+        application.hr_interview_ack_note = (note or "").strip() or None
+        application.status = "INTERVIEWED"
+        application.status_updated_at = datetime.utcnow()
+        application.updated_at = datetime.utcnow()
+        db.flush()
+        return application

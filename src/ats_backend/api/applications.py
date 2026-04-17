@@ -18,7 +18,8 @@ from ats_backend.core.session_context import with_client_context
 from ats_backend.schemas.application import (
     ApplicationCreate,
     ApplicationUpdate,
-    ApplicationResponse
+    ApplicationResponse,
+    HrInterviewAcknowledgeRequest,
 )
 from ats_backend.core.logging import performance_logger
 
@@ -788,6 +789,82 @@ async def update_application_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to update application status: {str(e)}"
+        )
+
+
+@router.post("/{application_id}/acknowledge-hr-interview", response_model=ApplicationResponse)
+async def acknowledge_hr_interview(
+    application_id: UUID,
+    payload: HrInterviewAcknowledgeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    current_client: Client = Depends(get_current_client),
+):
+    """Explicitly acknowledge HR interview completion before client review."""
+    try:
+        with performance_logger.log_operation_time(
+            "acknowledge_hr_interview",
+            user_id=str(current_user.id),
+            client_id=str(current_client.id),
+            application_id=str(application_id),
+        ):
+            user_role = (current_user.role or "").strip().lower()
+            if user_role != "hr_admin":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only HR admins can acknowledge interview handoff",
+                )
+
+            application_service = ApplicationService()
+            application = application_service.acknowledge_hr_interview(
+                db=db,
+                application_id=application_id,
+                client_id=current_client.id,
+                acknowledged_by=current_user.id,
+                note=payload.note,
+            )
+            if not application:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Application not found",
+                )
+
+            db.add(
+                ActivityLog(
+                    client_id=current_client.id,
+                    user_id=current_user.id,
+                    action_type="HR_INTERVIEW_ACKNOWLEDGED",
+                    entity_id=application_id,
+                    details={
+                        "note": payload.note,
+                        "status": application.status,
+                    },
+                )
+            )
+            db.commit()
+            db.refresh(application)
+            return application
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            "Failed to acknowledge HR interview",
+            application_id=str(application_id),
+            client_id=str(current_client.id),
+            user_id=str(current_user.id),
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to acknowledge HR interview: {str(e)}",
         )
 
 

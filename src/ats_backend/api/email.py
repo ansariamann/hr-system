@@ -2,11 +2,13 @@
 
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+import secrets
 from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 import structlog
 
 from ats_backend.core.database import get_db
+from ats_backend.core.config import settings
 from ats_backend.auth.dependencies import get_current_user, get_current_client, require_roles
 from ats_backend.auth.models import User
 from ats_backend.models.client import Client
@@ -35,6 +37,31 @@ from pathlib import Path
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/email", tags=["email"])
+
+
+def _validate_webhook_auth(request: Request) -> None:
+    """Validate API key auth for webhook endpoints."""
+    expected_key = settings.email_webhook_api_key
+    if not expected_key:
+        logger.error("Email webhook API key is not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook authentication is not configured",
+        )
+
+    provided_key = request.headers.get("X-Webhook-Key")
+    if not provided_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing webhook authentication key",
+        )
+
+    if not secrets.compare_digest(provided_key, expected_key):
+        logger.warning("Invalid webhook authentication key")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook authentication key",
+        )
 
 
 @router.post("/poll-imap")
@@ -435,9 +462,11 @@ async def parse_resume_job(
             "phone": candidate_data.get("phone"),
             "location": candidate_data.get("location"),
             "skills": [s for s in parsed_resume.skills], # Ensure list of strings
-            "experience_years": len(parsed_resume.experience), # Approximate years via entry count
+            "experience_years": float(parsed_resume.total_experience_years) if parsed_resume.total_experience_years is not None else None,
             "education": [e.degree for e in parsed_resume.education],
-            "raw_text_summary": parsed_resume.summary
+            "raw_text_summary": parsed_resume.summary,
+            "linkedin_url": parsed_resume.linkedin_url,
+            "other_details": parsed_resume.other_details,
         }
         
         return {
@@ -649,6 +678,8 @@ async def email_webhook_raw(
     via API key or other webhook-specific authentication.
     """
     try:
+        _validate_webhook_auth(request)
+
         logger.info(
             "Raw email webhook received",
             client_id=str(client_id),

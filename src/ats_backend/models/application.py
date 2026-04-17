@@ -28,6 +28,10 @@ class Application(Base):
     flag_reason = Column(Text, nullable=True)
     notes = Column(Text, nullable=True)
     applied_by_user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
+    hr_interview_acknowledged = Column(Boolean, default=False, nullable=False, server_default="false")
+    hr_interview_acknowledged_at = Column(DateTime, nullable=True)
+    hr_interview_acknowledged_by = Column(GUID(), ForeignKey("users.id"), nullable=True)
+    hr_interview_ack_note = Column(Text, nullable=True)
     deleted_at = Column(DateTime, nullable=True)  # Soft delete
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -37,6 +41,7 @@ class Application(Base):
     candidate = relationship("Candidate", back_populates="applications")
     job = relationship("Job", back_populates="applications")
     applied_by_user = relationship("User", foreign_keys=[applied_by_user_id])
+    hr_interview_acknowledged_user = relationship("User", foreign_keys=[hr_interview_acknowledged_by])
     
     def __repr__(self) -> str:
         return f"<Application(id={self.id}, candidate_id={self.candidate_id}, client_id={self.client_id})>"

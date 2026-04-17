@@ -291,9 +291,10 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-# Serve uploaded files (resumes) for dashboard preview/download.
-Path("uploads").mkdir(exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
+# Serve uploaded files only in development; production should use authenticated endpoints.
+if settings.environment.lower() == "development":
+    Path("uploads").mkdir(exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/health", tags=["monitoring/observability"])
 def health_check():
@@ -321,7 +322,6 @@ def login(
     db: Session = Depends(get_db)
 ):
     """Authenticate user and return access token with comprehensive error handling and security features."""
-    print(f"DEBUG: Login Request for {form_data.username}")
     from ats_backend.auth.utils import authenticate_user
     
     context = ErrorContext(
@@ -348,7 +348,6 @@ def login(
             )
             
             if not user:
-                print(f"DEBUG: Login failed for {form_data.username}")
                 logger.warning("Login failed", email=form_data.username)
                 raise AuthenticationError(
                     "Incorrect email or password",

@@ -43,29 +43,20 @@ async def get_current_user(
     )
     
     if not credentials:
-        print("DEBUG: get_current_user - No credentials provided")
         logger.warning("No credentials provided")
         raise credentials_exception
 
-    print(f"DEBUG: get_current_user - Got credentials token: {credentials.credentials[:40]}...")
-
     try:
         from .utils import verify_token
-        print("DEBUG: get_current_user - Calling verify_token...")
         token_data = await verify_token(credentials.credentials, db)
-        print(f"DEBUG: get_current_user - verify_token returned: {token_data}")
         
         if token_data is None or token_data.user_id is None:
-            print("DEBUG: get_current_user - token_data is None or user_id is None")
             logger.info("AUTH_DEBUG: Invalid token data in dependencies")
             raise credentials_exception
         
-        print(f"DEBUG: get_current_user - Looking for user with ID: {token_data.user_id}")
         user = get_user_by_id(db, token_data.user_id)
-        print(f"DEBUG: get_current_user - get_user_by_id returned: {user}")
         
         if user is None:
-            print("DEBUG: get_current_user - User not found!")
             logger.warning("User not found", user_id=str(token_data.user_id))
             raise credentials_exception
             
@@ -76,13 +67,11 @@ async def get_current_user(
                         user_id=str(user.id), 
                         client_id=str(user.client_id))
         
-        print(f"DEBUG: get_current_user - Returning user: {user.email}")
         return user
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"DEBUG: get_current_user - Exception: {type(e).__name__}: {e}")
         logger.info("AUTH_DEBUG: Authentication failed in dependencies", error=str(e))
         raise credentials_exception
 

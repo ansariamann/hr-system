@@ -19,6 +19,7 @@ class InterviewRecord(Base):
     candidate_id = Column(GUID(), ForeignKey("candidates.id"), nullable=False)
     client_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
     company_id = Column(GUID(), ForeignKey("clients.id"), nullable=False)
+    job_id = Column(GUID(), ForeignKey("jobs.id"), nullable=True)
     interviewer_id = Column(GUID(), ForeignKey("users.id"), nullable=False)
     interview_date = Column(DateTime, nullable=False)
     position = Column(String(255), nullable=True)
@@ -33,6 +34,7 @@ class InterviewRecord(Base):
     candidate = relationship("Candidate", foreign_keys=[candidate_id])
     client = relationship("Client", foreign_keys=[client_id])
     company = relationship("Client", foreign_keys=[company_id])
+    job = relationship("Job", foreign_keys=[job_id])
     interviewer = relationship("User", foreign_keys=[interviewer_id])
     
     def __repr__(self) -> str:

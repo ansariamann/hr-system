@@ -31,7 +31,11 @@ def normalize_role(role: Optional[str]) -> str:
 
 def get_pwd_context():
     """Get password context based on environment."""
-    return CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=4)
+    return CryptContext(
+        schemes=["bcrypt"],
+        deprecated="auto",
+        bcrypt__rounds=max(10, settings.password_hash_rounds),
+    )
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -79,7 +83,7 @@ def get_password_hash(password: str) -> str:
 
     try:
         import bcrypt
-        salt = bcrypt.gensalt(rounds=4)
+        salt = bcrypt.gensalt(rounds=max(10, settings.password_hash_rounds))
         return bcrypt.hashpw(password_bytes, salt).decode('utf-8')
     except Exception as e:
         logger.warning(f"Direct bcrypt hashing failed: {e}, attempting passlib fallback")
@@ -182,19 +186,15 @@ def authenticate_user(
     if user:
         logger.debug("User found in DB", extra={"email": email})
     
-    print(f"DEBUG: authenticate_user called for {email}")
     if not user:
-        print(f"DEBUG: User not found for email {email}")
         logger.warning("User not found", email=email)
         return None
         
     if not user.is_active:
-        print(f"DEBUG: User {email} is inactive")
         logger.warning("User is inactive", email=email)
         return None
         
     if not verify_password(password, user.hashed_password):
-        print(f"DEBUG: verify_password failed for {email}")
         logger.warning("Invalid password", email=email)
         return None
     

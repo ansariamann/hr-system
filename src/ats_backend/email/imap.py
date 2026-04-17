@@ -11,6 +11,8 @@ import structlog
 from sqlalchemy.orm import Session
 
 from ats_backend.core.config import settings
+from ats_backend.auth.models import User
+from ats_backend.models.client import Client
 from ats_backend.email.parser import EmailParser
 from ats_backend.email.processor import EmailProcessor
 from ats_backend.models.activity_log import ActivityLog
@@ -55,14 +57,10 @@ class IMAPPollingService:
     def poll_inbox(self, db: Session, *, user_id: Optional[UUID] = None) -> IMAPPollResult:
         """Poll unread messages from the configured IMAP inbox."""
         result = IMAPPollResult()
+        effective_client_id: Optional[UUID] = None
 
         if not settings.imap_ingestion_enabled:
             logger.info("IMAP ingestion disabled; skipping mailbox poll")
-            return result
-
-        if not settings.imap_client_id:
-            logger.warning("IMAP ingestion enabled but imap_client_id is missing")
-            result.failures += 1
             return result
 
         if not settings.imap_username or not settings.imap_password:
@@ -70,10 +68,38 @@ class IMAPPollingService:
             result.failures += 1
             return result
 
-        try:
-            client_id = UUID(settings.imap_client_id)
-        except ValueError:
-            logger.warning("Configured imap_client_id is not a valid UUID", imap_client_id=settings.imap_client_id)
+        configured_client_id: Optional[UUID] = None
+        if settings.imap_client_id:
+            try:
+                configured_client_id = UUID(settings.imap_client_id)
+            except ValueError:
+                logger.warning(
+                    "Configured imap_client_id is not a valid UUID",
+                    imap_client_id=settings.imap_client_id,
+                )
+
+        # For manual polling, prefer the authenticated user's tenant.
+        if user_id:
+            user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+            if user:
+                effective_client_id = user.client_id
+            else:
+                logger.warning("IMAP poll user not found or inactive", user_id=str(user_id))
+
+        if effective_client_id is None:
+            effective_client_id = configured_client_id
+
+        if effective_client_id is None:
+            logger.warning("IMAP ingestion enabled but no valid client context is available")
+            result.failures += 1
+            return result
+
+        client_exists = db.query(Client.id).filter(Client.id == effective_client_id).first()
+        if not client_exists:
+            logger.error(
+                "IMAP poll client does not exist; aborting poll",
+                client_id=str(effective_client_id),
+            )
             result.failures += 1
             return result
 
@@ -109,7 +135,7 @@ class IMAPPollingService:
                     email_message = self.email_parser.parse_raw_email_bytes(raw_email)
                     processing_result = self.email_processor.process_email(
                         db=db,
-                        client_id=client_id,
+                        client_id=effective_client_id,
                         email=email_message,
                         user_id=user_id,
                         ip_address="imap",
@@ -142,7 +168,7 @@ class IMAPPollingService:
                     should_mark_seen = "at least one attachment" in error_message or "resume file" in error_message
                     db.add(
                         ActivityLog(
-                            client_id=client_id,
+                            client_id=effective_client_id,
                             user_id=user_id,
                             action_type="IMAP_MESSAGE_FAILED",
                             entity_id=None,
@@ -171,7 +197,7 @@ class IMAPPollingService:
 
         db.add(
             ActivityLog(
-                client_id=client_id if settings.imap_client_id else None,
+                client_id=effective_client_id,
                 user_id=user_id,
                 action_type="IMAP_POLL_COMPLETED",
                 entity_id=None,

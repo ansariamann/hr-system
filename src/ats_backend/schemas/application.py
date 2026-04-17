@@ -67,6 +67,7 @@ class ApplicationBase(BaseModel):
 
 class ApplicationCreate(ApplicationBase):
     """Schema for creating a new application."""
+    job_id: UUID = Field(..., description="Job UUID linked to the application")
     client_id: Optional[UUID] = Field(
         None, description="Target client UUID; defaults to current authenticated client if omitted"
     )
@@ -98,12 +99,22 @@ class ApplicationUpdate(BaseModel):
         return v
 
 
+class HrInterviewAcknowledgeRequest(BaseModel):
+    """Request payload for HR interview acknowledgement."""
+
+    note: Optional[str] = Field(None, description="Optional note sent with HR acknowledgement")
+
+
 class ApplicationResponse(ApplicationBase):
     """Schema for application response."""
     
     id: UUID
     client_id: UUID
     applied_by_user_id: Optional[UUID]
+    hr_interview_acknowledged: bool
+    hr_interview_acknowledged_at: Optional[datetime]
+    hr_interview_acknowledged_by: Optional[UUID]
+    hr_interview_ack_note: Optional[str]
     deleted_at: Optional[datetime]
     created_at: datetime
     updated_at: datetime

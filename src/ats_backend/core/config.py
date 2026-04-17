@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="dev-secret-key", description="JWT secret key")
     algorithm: str = Field(default="HS256", description="JWT algorithm")
     access_token_expire_minutes: int = Field(default=30, description="Token expiry minutes")
+    password_hash_rounds: int = Field(default=12, description="bcrypt hashing rounds")
+    email_webhook_api_key: Optional[str] = Field(default=None, description="Shared secret for email webhook authentication")
     
     # Celery Configuration
     celery_broker_url: Optional[str] = Field(default=None, description="Celery broker URL")
