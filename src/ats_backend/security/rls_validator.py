@@ -227,7 +227,10 @@ class RLSValidator:
             # Test 3: Attempt direct RLS bypass
             try:
                 # Try to bypass RLS by setting different client context
-                db.execute(text(f"SET LOCAL app.current_client_id = '{client1_id}'"))
+                db.execute(
+                    text("SELECT set_config('app.current_client_id', :client_id, true)"),
+                    {"client_id": str(client1_id)}
+                )
                 
                 bypass_results = db.execute(text("""
                     SELECT id, client_id FROM candidates WHERE client_id = :target_client_id
