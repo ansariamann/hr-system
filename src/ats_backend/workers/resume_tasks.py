@@ -2,7 +2,7 @@
 
 from typing import Dict, Any, Optional
 from uuid import UUID
-from celery import Task
+from celery import Task, group
 import structlog
 from pathlib import Path
 
@@ -331,41 +331,49 @@ def batch_process_resumes(
         successful_count = 0
         failed_count = 0
         
-        for job_id in job_ids:
-            try:
-                # Process each resume individually
-                result = process_resume_file.apply(
-                    args=[client_id, job_id, user_id]
-                )
+        if job_ids:
+            # Create a group of tasks for parallel execution
+            job_tasks = [
+                process_resume_file.s(client_id, job_id, user_id)
+                for job_id in job_ids
+            ]
+
+            # Execute the group and wait for results
+            job_group = group(job_tasks)
+            group_result = job_group.apply_async()
+
+            # Get all results (blocking call)
+            # We use propagate=False to ensure we get all results even if some tasks failed
+            task_results = group_result.get(propagate=False)
+
+            for i, task_result in enumerate(task_results):
+                job_id = job_ids[i]
                 
-                if result.successful():
-                    task_result = result.get()
-                    if task_result.get("success", False):
-                        successful_count += 1
-                    else:
-                        failed_count += 1
-                    results.append(task_result)
-                else:
+                # Check if task_result is an exception or indicates failure
+                if isinstance(task_result, Exception):
                     failed_count += 1
                     results.append({
                         "success": False,
                         "job_id": job_id,
-                        "message": "Task execution failed"
+                        "message": f"Processing failed: {str(task_result)}"
                     })
-                    
-            except Exception as e:
-                failed_count += 1
-                results.append({
-                    "success": False,
-                    "job_id": job_id,
-                    "message": f"Processing failed: {str(e)}"
-                })
-                
-                logger.error(
-                    "Individual resume processing failed in batch",
-                    job_id=job_id,
-                    error=str(e)
-                )
+                    logger.error(
+                        "Individual resume processing failed in batch",
+                        job_id=job_id,
+                        error=str(task_result)
+                    )
+                elif isinstance(task_result, dict) and task_result.get("success", False):
+                    successful_count += 1
+                    results.append(task_result)
+                else:
+                    failed_count += 1
+                    results.append(
+                        task_result if isinstance(task_result, dict) else {
+                            "success": False,
+                            "job_id": job_id,
+                            "message": "Task execution failed or returned invalid result"
+                        }
+                    )
         
         logger.info(
             "Batch resume processing task completed",
