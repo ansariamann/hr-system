@@ -140,8 +140,12 @@ class SlackNotificationSender(NotificationSender):
     async def send(self, alert: Alert, config: Dict[str, Any]) -> bool:
         """Send notification via Slack."""
         try:
-            # This would integrate with Slack API
-            # For now, just log the Slack message that would be sent
+            import aiohttp
+
+            webhook_url = config.get("webhook_url")
+            if not webhook_url:
+                logger.error("Slack webhook URL not configured")
+                return False
             
             color = {
                 AlertSeverity.INFO: "good",
@@ -149,8 +153,9 @@ class SlackNotificationSender(NotificationSender):
                 AlertSeverity.CRITICAL: "danger"
             }.get(alert.severity, "warning")
             
-            message = {
+            payload = {
                 "text": f"ATS Alert: {alert.name}",
+                "channel": config.get("channel", "#alerts"),
                 "attachments": [{
                     "color": color,
                     "fields": [
@@ -164,16 +169,27 @@ class SlackNotificationSender(NotificationSender):
                 }]
             }
             
-            logger.info(
-                "Slack notification would be sent",
-                webhook_url=config.get("webhook_url", "not_configured"),
-                channel=config.get("channel", "#alerts"),
-                message=message,
-                alert_name=alert.name
-            )
+            timeout = aiohttp.ClientTimeout(total=10)
             
-            # TODO: Integrate with actual Slack webhook
-            return True
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(webhook_url, json=payload) as response:
+                    if response.status in (200, 201, 204):
+                        logger.info(
+                            "Slack notification sent successfully",
+                            webhook_url=webhook_url,
+                            alert_name=alert.name,
+                            status_code=response.status
+                        )
+                        return True
+                    else:
+                        logger.error(
+                            "Slack notification failed",
+                            webhook_url=webhook_url,
+                            alert_name=alert.name,
+                            status_code=response.status,
+                            response_text=await response.text()
+                        )
+                        return False
             
         except Exception as e:
             logger.error("Failed to send Slack notification", error=str(e))
