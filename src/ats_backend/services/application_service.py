@@ -587,20 +587,7 @@ class ApplicationService:
         Returns:
             Dictionary with application statistics
         """
-        stats = {
-            "total_applications": self.repository.count(db, {"client_id": client_id}),
-            "active_applications": len(self.repository.get_active_applications(db, client_id)),
-            "deleted_applications": len(self.repository.get_deleted_applications(db, client_id)),
-            "flagged_applications": len(self.repository.get_flagged_applications(db, client_id)),
-            "received": self.repository.count_by_status(db, client_id, "RECEIVED"),
-            "screening": self.repository.count_by_status(db, client_id, "SCREENING"),
-            "interview_scheduled": self.repository.count_by_status(db, client_id, "INTERVIEW_SCHEDULED"),
-            "interviewed": self.repository.count_by_status(db, client_id, "INTERVIEWED"),
-            "offer_made": self.repository.count_by_status(db, client_id, "OFFER_MADE"),
-            "hired": self.repository.count_by_status(db, client_id, "HIRED"),
-            "rejected": self.repository.count_by_status(db, client_id, "REJECTED"),
-            "withdrawn": self.repository.count_by_status(db, client_id, "WITHDRAWN"),
-        }
+        stats = self.repository.get_statistics(db, client_id)
         
         logger.debug("Application statistics retrieved", client_id=str(client_id), stats=stats)
         return stats
