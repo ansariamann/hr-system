@@ -1,9 +1,0 @@
-Tables found: ['alembic_version', 'applications', 'clients', 'resume_jobs', 'candidates', 'users', 'interview_records', 'security_audit_logs', 'activity_logs', 'fsm_transition_logs', 'password_reset_tokens', 'jobs', 'company_employees', 'audit_logs']
-Table 'clients' exists.
-Columns in 'clients': ['id', 'name', 'email_domain', 'created_at', 'updated_at', 'industry', 'contact_name', 'contact_email', 'contact_phone', 'address', 'website', 'is_active']
-Table 'candidates' exists.
-Columns in 'candidates': ['id', 'client_id', 'name', 'email', 'phone', 'skills', 'experience', 'ctc_current', 'ctc_expected', 'status', 'candidate_hash', 'created_at', 'updated_at', 'is_blacklisted', 'location', 'remark', 'resume_file_path', 'resume_url', 'assigned_user_id', 'present_address', 'permanent_address', 'date_of_birth', 'previous_employment', 'key_skill', 'company', 'is_direct_interview', 'total_experience_years', 'notice_period_days', 'source', 'linkedin_url', 'selected_client_name']
-Table 'activity_logs' exists.
-Columns in 'activity_logs': ['id', 'client_id', 'user_id', 'action_type', 'entity_id', 'details', 'created_at']
-Table 'audit_logs' exists.
-Columns in 'audit_logs': ['id', 'client_id', 'user_id', 'table_name', 'record_id', 'action', 'old_values', 'new_values', 'changes', 'timestamp', 'ip_address', 'user_agent']
