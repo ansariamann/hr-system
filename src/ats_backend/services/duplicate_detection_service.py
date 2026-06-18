@@ -489,31 +489,33 @@ class DuplicateDetectionService:
             Dictionary with duplicate detection statistics
         """
         try:
-            # Get all candidates
-            candidates = self.candidate_repository.get_multi(
-                db, skip=0, limit=10000, filters={"client_id": client_id}
+            # Count all candidates
+            total_candidates = self.candidate_repository.count(
+                db, filters={"client_id": client_id}
             )
             
             # Count candidates with hashes
-            candidates_with_hash = sum(1 for c in candidates if c.candidate_hash)
+            candidates_with_hash = self.candidate_repository.count_with_hash(
+                db, client_id
+            )
             
             # Count flagged applications
-            flagged_applications = self.application_repository.get_flagged_applications(
-                db, client_id, skip=0, limit=10000
+            flagged_applications_count = self.application_repository.count_flagged_applications(
+                db, client_id
             )
             
             # Count LEFT status candidates
-            left_candidates = self.candidate_repository.get_by_status(
-                db, client_id, "LEFT", skip=0, limit=10000
+            left_candidates_count = self.candidate_repository.count(
+                db, filters={"client_id": client_id, "status": "LEFT"}
             )
             
             stats = {
-                "total_candidates": len(candidates),
+                "total_candidates": total_candidates,
                 "candidates_with_hash": candidates_with_hash,
-                "candidates_without_hash": len(candidates) - candidates_with_hash,
-                "flagged_applications": len(flagged_applications),
-                "left_status_candidates": len(left_candidates),
-                "hash_coverage_percentage": (candidates_with_hash / len(candidates) * 100) if candidates else 0
+                "candidates_without_hash": total_candidates - candidates_with_hash,
+                "flagged_applications": flagged_applications_count,
+                "left_status_candidates": left_candidates_count,
+                "hash_coverage_percentage": (candidates_with_hash / total_candidates * 100) if total_candidates > 0 else 0
             }
             
             logger.debug(
