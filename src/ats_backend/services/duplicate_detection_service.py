@@ -353,6 +353,21 @@ class DuplicateDetectionService:
             )
             return False, f"Error checking workflow progression: {str(e)}"
     
+    def _get_candidate_hash_data(self, candidate: Candidate) -> Dict[str, Optional[str]]:
+        """Extract candidate data for hash generation.
+
+        Args:
+            candidate: Candidate object
+
+        Returns:
+            Dictionary with candidate data
+        """
+        return {
+            "name": candidate.name,
+            "email": candidate.email,
+            "phone": candidate.phone
+        }
+
     def update_candidate_hash(
         self,
         db: Session,
@@ -379,12 +394,7 @@ class DuplicateDetectionService:
                 return True
             
             # Generate new hash
-            candidate_data = {
-                "name": candidate.name,
-                "email": candidate.email,
-                "phone": candidate.phone
-            }
-            
+            candidate_data = self._get_candidate_hash_data(candidate)
             new_hash = self.hash_generator.generate_hash_from_dict(candidate_data)
             
             # Update hash
@@ -421,38 +431,69 @@ class DuplicateDetectionService:
                 force_regenerate=force_regenerate
             )
             
-            # Get all candidates for client
-            candidates = self.candidate_repository.get_multi(
-                db, skip=0, limit=10000, filters={"client_id": client_id}
-            )
-            
             updated_count = 0
             skipped_count = 0
             error_count = 0
+            total_processed = 0
             
-            for candidate in candidates:
-                try:
-                    # Skip if hash exists and not forcing regeneration
-                    if candidate.candidate_hash and not force_regenerate:
-                        skipped_count += 1
-                        continue
-                    
-                    # Generate and update hash
-                    if self.update_candidate_hash(db, candidate.id, force_regenerate):
-                        updated_count += 1
-                    else:
+            # Use repository iterator
+            iterator = self.candidate_repository.get_candidates_for_client_iterator(
+                db, client_id, batch_size=1000
+            )
+            
+            for candidates in iterator:
+                batch_updates = 0
+                for candidate in candidates:
+                    try:
+                        # Skip if hash exists and not forcing regeneration
+                        if candidate.candidate_hash and not force_regenerate:
+                            skipped_count += 1
+                            continue
+
+                        # Generate hash directly from object (avoid re-fetch)
+                        candidate_data = self._get_candidate_hash_data(candidate)
+                        new_hash = self.hash_generator.generate_hash_from_dict(candidate_data)
+
+                        if candidate.candidate_hash != new_hash:
+                            candidate.candidate_hash = new_hash
+                            batch_updates += 1
+                            updated_count += 1
+                        else:
+                            skipped_count += 1
+
+                    except Exception as e:
+                        logger.error(
+                            "Individual candidate hash calculation failed",
+                            candidate_id=str(candidate.id),
+                            error=str(e)
+                        )
                         error_count += 1
-                        
-                except Exception as e:
-                    logger.error(
-                        "Individual candidate hash update failed",
-                        candidate_id=str(candidate.id),
-                        error=str(e)
-                    )
-                    error_count += 1
-            
+
+                # Commit batch
+                if batch_updates > 0:
+                    try:
+                        db.commit()
+                    except Exception as e:
+                        db.rollback()
+                        logger.error(
+                            "Batch commit failed",
+                            error=str(e)
+                        )
+                        # Assume all updates in batch failed
+                        error_count += batch_updates
+                        # Revert counts
+                        updated_count -= batch_updates
+
+                total_processed += len(candidates)
+
+                logger.debug(
+                    "Processed batch",
+                    batch_size=len(candidates),
+                    updates=batch_updates
+                )
+
             stats = {
-                "total_candidates": len(candidates),
+                "total_candidates": total_processed,
                 "updated": updated_count,
                 "skipped": skipped_count,
                 "errors": error_count
