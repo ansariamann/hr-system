@@ -1245,26 +1245,90 @@ def monitor_queue_health(self):
 
 
 @celery_app.task(bind=True, base=EmailProcessingTask, name="cleanup_stale_tasks")
-def cleanup_stale_tasks(self):
-    """Clean up stale tasks and metrics."""
+def cleanup_stale_tasks(self, stale_threshold_seconds: int = 3600):
+    """Clean up stale tasks and metrics.
+
+    Args:
+        stale_threshold_seconds: Threshold in seconds to consider a task stale
+    """
     try:
         from ats_backend.core.metrics import metrics_collector
         from datetime import timedelta
+        import time
         
-        logger.info("Starting stale task cleanup")
+        logger.info("Starting stale task cleanup", stale_threshold_seconds=stale_threshold_seconds)
         
         # Clean up old metrics (older than 24 hours)
         metrics_collector.cleanup_old_metrics(timedelta(hours=24))
         
-        # TODO: Add cleanup for stale Celery tasks
-        # This would involve checking for tasks that have been running too long
-        # and potentially terminating them
+        # Cleanup stale Celery tasks
+        inspector = celery_app.control.inspect()
+        active_tasks = inspector.active() or {}
+
+        terminated_tasks = []
+        now = time.time()
+
+        for worker_name, tasks in active_tasks.items():
+            for task in tasks:
+                task_id = task.get("id")
+                time_start = task.get("time_start")
+                task_name = task.get("name")
+
+                # Skip if missing essential info
+                if not task_id or not time_start:
+                    continue
+
+                # Skip if it's this cleanup task itself
+                if task_name == "cleanup_stale_tasks":
+                    continue
+
+                duration = now - time_start
+
+                if duration > stale_threshold_seconds:
+                    logger.warning(
+                        "Terminating stale task",
+                        task_id=task_id,
+                        task_name=task_name,
+                        worker=worker_name,
+                        duration_seconds=duration,
+                        threshold=stale_threshold_seconds
+                    )
+
+                    try:
+                        # Terminate the task
+                        celery_app.control.revoke(task_id, terminate=True, destination=[worker_name])
+
+                        terminated_tasks.append({
+                            "task_id": task_id,
+                            "task_name": task_name,
+                            "worker": worker_name,
+                            "duration_seconds": duration
+                        })
+
+                        # Record metric
+                        metrics_collector.record_metric(
+                            "celery.tasks.terminated",
+                            1,
+                            {"task_name": task_name, "reason": "stale"}
+                        )
+
+                    except Exception as e:
+                         logger.error(
+                            "Failed to terminate stale task",
+                            task_id=task_id,
+                            error=str(e)
+                        )
         
-        logger.info("Stale task cleanup completed")
+        logger.info(
+            "Stale task cleanup completed",
+            terminated_count=len(terminated_tasks)
+        )
         
         return {
             "success": True,
             "message": "Stale task cleanup completed",
+            "terminated_count": len(terminated_tasks),
+            "terminated_tasks": terminated_tasks,
             "timestamp": datetime.utcnow().isoformat()
         }
         
