@@ -24,6 +24,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a password against its hash."""
     logger.debug("Verifying password", extra={"plain_password": plain_password, "hashed_password": hashed_password})
     pwd_context = get_pwd_context()
+    import hashlib
+    import base64
+    # Pre-hash with SHA-384 + base64 if password exceeds bcrypt's 72-byte limit.
+    # Yields a 64-character ASCII string (64 bytes in UTF-8), strictly under bcrypt's 72-byte limit,
+    # without null-byte truncation or Unicode issues.
+    if len(plain_password.encode('utf-8')) > 72:
+        plain_password = base64.b64encode(hashlib.sha384(plain_password.encode('utf-8')).digest()).decode('ascii')
     return pwd_context.verify(plain_password, hashed_password)
 
 
@@ -32,9 +39,12 @@ def get_password_hash(password: str) -> str:
     pwd_context = get_pwd_context()
     
     import hashlib
-    # Pre-hash with SHA-256 if password exceeds bcrypt's 72-byte limit
+    import base64
+    # Pre-hash with SHA-384 + base64 if password exceeds bcrypt's 72-byte limit.
+    # Yields a 64-character ASCII string (64 bytes in UTF-8), strictly under bcrypt's 72-byte limit,
+    # without null-byte truncation or Unicode issues.
     if len(password.encode('utf-8')) > 72:
-        password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        password = base64.b64encode(hashlib.sha384(password.encode('utf-8')).digest()).decode('ascii')
     
     return pwd_context.hash(password)
 
