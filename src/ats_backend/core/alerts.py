@@ -99,14 +99,40 @@ class EmailNotificationSender(NotificationSender):
     """Email notification sender."""
     
     async def send(self, alert: Alert, config: Dict[str, Any]) -> bool:
-        """Send notification via email."""
+        """Send notification via email using SMTP."""
         try:
-            # This would integrate with your email system
-            # For now, just log the email that would be sent
+            import smtplib
+            from email.mime.text import MIMEText
+
+            recipients = config.get("recipients") or getattr(settings, 'alerts_email_recipients', [])
+            if isinstance(recipients, str):
+                recipients = [recipients]
+
+            if not recipients:
+                logger.error("Email notification failed: No recipients configured")
+                return False
+
+            smtp_host = config.get("smtp_host") or getattr(settings, 'smtp_host', 'localhost')
+            if not smtp_host:
+                logger.error("Email notification failed: SMTP host not configured")
+                return False
+
+            smtp_port = config.get("smtp_port") or getattr(settings, 'smtp_port', 587)
+            smtp_username = config.get("smtp_username") or getattr(settings, 'smtp_username', None)
+            smtp_password = config.get("smtp_password") or getattr(settings, 'smtp_password', None)
+
+            use_tls = config.get("use_tls", config.get("smtp_use_tls", getattr(settings, 'smtp_use_tls', True)))
+            use_ssl = config.get("use_ssl", False)
             
+            from_email = (
+                config.get("from_email")
+                or config.get("sender")
+                or smtp_username
+                or "noreply@ats.local"
+            )
+
             subject = f"[{alert.severity.value.upper()}] ATS Alert: {alert.name}"
-            body = f"""
-Alert: {alert.name}
+            body = f"""Alert: {alert.name}
 Severity: {alert.severity.value}
 Condition: {alert.condition}
 Threshold: {alert.threshold}
@@ -117,16 +143,41 @@ Triggered At: {alert.triggered_at.isoformat()}
 Details:
 {json.dumps(alert.details, indent=2)}
 """
-            
+
+            def _send_smtp():
+                msg = MIMEText(body, "plain", "utf-8")
+                msg["Subject"] = subject
+                msg["From"] = from_email
+                msg["To"] = ", ".join(recipients)
+
+                if use_ssl:
+                    server = smtplib.SMTP_SSL(smtp_host, int(smtp_port), timeout=10)
+                else:
+                    server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=10)
+
+                try:
+                    if not use_ssl and use_tls:
+                        server.starttls()
+
+                    if smtp_username and smtp_password:
+                        server.login(smtp_username, smtp_password)
+
+                    server.sendmail(from_email, recipients, msg.as_string())
+                finally:
+                    try:
+                        server.quit()
+                    except Exception:
+                        pass
+
+            await asyncio.to_thread(_send_smtp)
+
             logger.info(
-                "Email notification would be sent",
-                to=config.get("recipients", []),
+                "Email notification sent successfully",
+                to=recipients,
                 subject=subject,
                 alert_name=alert.name,
                 severity=alert.severity.value
             )
-            
-            # TODO: Integrate with actual email sending service
             return True
             
         except Exception as e:
