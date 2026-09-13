@@ -279,10 +279,22 @@ class TestConfigurationValidation:
     
     def test_api_config_validation(self):
         """Test API configuration validation."""
-        from ats_backend.core.error_handling import validate_api_config
+        from ats_backend.core.error_handling import validate_api_config, ConfigurationError
         
-        # Should pass with current settings
-        assert validate_api_config() == True
+        # Should pass when secret_key is set
+        with patch.object(settings, 'secret_key', 'valid-secure-key-12345'):
+            assert validate_api_config() == True
+
+        # Should fail when secret_key is missing/None
+        with patch.object(settings, 'secret_key', None):
+            with pytest.raises(ConfigurationError, match="Missing JWT secret key configuration"):
+                validate_api_config()
+
+        # Should fail when dev-secret-key is used in production
+        with patch.object(settings, 'secret_key', 'dev-secret-key'):
+            with patch.object(settings, 'environment', 'production'):
+                with pytest.raises(ConfigurationError, match="Production environment requires secure secret key"):
+                    validate_api_config()
     
     def test_email_config_validation(self):
         """Test email configuration validation."""

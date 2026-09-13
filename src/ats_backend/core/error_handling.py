@@ -747,9 +747,11 @@ def validate_redis_config() -> bool:
 def validate_api_config() -> bool:
     """Validate API configuration."""
     try:
-        if not settings.secret_key or settings.secret_key == "dev-secret-key":
-            if settings.environment == "production":
-                raise ConfigurationError("Production environment requires secure secret key")
+        if not settings.secret_key:
+            raise ConfigurationError("Missing JWT secret key configuration")
+
+        if settings.secret_key == "dev-secret-key" and settings.environment == "production":
+            raise ConfigurationError("Production environment requires secure secret key")
         
         if settings.access_token_expire_minutes <= 0:
             raise ConfigurationError("Invalid token expiration time")
@@ -763,6 +765,8 @@ def validate_api_config() -> bool:
         logger.info("API configuration validated successfully")
         return True
         
+    except ConfigurationError:
+        raise
     except Exception as e:
         logger.error("API configuration validation failed", error=str(e))
         raise ConfigurationError(f"API configuration validation failed: {str(e)}")

@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", description="API host")
     api_port: int = Field(default=8000, description="API port")
     api_workers: int = Field(default=4, description="Number of API workers")
-    secret_key: str = Field(default="dev-secret-key", description="JWT secret key")
+    secret_key: Optional[str] = Field(default=None, description="JWT secret key")
     algorithm: str = Field(default="HS256", description="JWT algorithm")
     access_token_expire_minutes: int = Field(default=30, description="Token expiry minutes")
     
