@@ -66,8 +66,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 
 async def verify_token(token: str, db: Optional[Session] = None) -> Optional[TokenData]:
     """Verify and decode a JWT token."""
-    from .security import token_replay_protection, SecurityLogger, SecurityEventType, SecurityEventSeverity
-    
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         
@@ -85,16 +83,6 @@ async def verify_token(token: str, db: Optional[Session] = None) -> Optional[Tok
         if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
             logger.warning("Expired token rejected", user_id=user_id_str, email=email)
             return None
-        
-        # Token Replay Protection skipped for now to avoid Redis issues
-        # if jti and settings.token_replay_protection:
-        #     try:
-        #         is_valid = await token_replay_protection.validate_token_usage(jti)
-        #         if not is_valid:
-        #             logger.warning("Token replay detected", jti=jti)
-        #             return None
-        #     except Exception as e:
-        #         logger.error("Token replay protection check failed", error=str(e))
             
         user_id = UUID(user_id_str)
         client_id = UUID(client_id_str) if client_id_str else None
