@@ -1,1 +1,0 @@
-"""Email ingestion module for ATS backend."""

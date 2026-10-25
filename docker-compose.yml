@@ -1,12 +1,14 @@
+version: '3.8'
+
 services:
-  # PostgreSQL Database with RLS support
+  # PostgreSQL Database with Row-Level Security (RLS)
   postgres:
     image: postgres:15-alpine
     container_name: ats-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-ats_db}
       POSTGRES_USER: ${POSTGRES_USER:-ats_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ats_password}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
     ports:
       - "5432:5432"
@@ -16,17 +18,13 @@ services:
     networks:
       - ats-network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-ats_user} -d ${POSTGRES_DB:-ats_db}",
-        ]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ats_user} -d ${POSTGRES_DB:-ats_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
 
-  # Redis for caching and Celery message broker
+  # Redis for pub/sub and high-speed caching
   redis:
     image: redis:7-alpine
     container_name: ats-redis
@@ -44,34 +42,28 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
 
-  # FastAPI Web Service
-  api:
+  # Java 21 / Spring Boot 3 Backend API & Embedded JobRunr Worker
+  ats-java-backend:
     build:
-      context: .
+      context: ./backend-java
       dockerfile: Dockerfile
-      target: api
-    container_name: ats-api
+    container_name: ats-java-backend
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-ats_db}
-      - POSTGRES_USER=${POSTGRES_USER:-ats_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_in_production}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - API_HOST=0.0.0.0
-      - API_PORT=8000
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - SPRING_PROFILES_ACTIVE=prod
+      - DATABASE_URL=jdbc:postgresql://postgres:5432/${POSTGRES_DB:-ats_db}
+      - DATABASE_USER=${POSTGRES_USER:-ats_user}
+      - DATABASE_PASSWORD=${POSTGRES_PASSWORD:-ats_password}
+      - JWT_SECRET=${JWT_SECRET:-your-very-long-secret-key-at-least-256-bits-for-hs256-algorithm}
+      - JWT_EXPIRATION_MS=86400000
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:80
+      - UPLOAD_DIR=/app/uploads
+      - PORT=8080
     ports:
-      - "8000:8000"
+      - "8080:8080" # REST API & Swagger UI (/swagger-ui.html)
+      - "8000:8000" # JobRunr Dashboard
     volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
+      - uploads_data:/app/uploads
+      - logs_data:/app/logs
     networks:
       - ats-network
     depends_on:
@@ -80,70 +72,35 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     restart: unless-stopped
 
-  # Celery Worker for background processing
-  worker:
+  # React Frontend (HTML, CSS, JS, React) served via Nginx
+  ats-frontend:
     build:
-      context: .
+      context: ./frontend
       dockerfile: Dockerfile
-      target: worker
-    environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-ats_db}
-      - POSTGRES_USER=${POSTGRES_USER:-ats_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me_in_production}
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_DB=0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - TESSERACT_CMD=/usr/bin/tesseract
-    volumes:
-      - ./uploads:/app/uploads
-      - ./logs:/app/logs
-    networks:
-      - ats-network
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    deploy:
-      replicas: 2
-
-  # Celery Flower for monitoring (optional, for development)
-  flower:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: flower
-    container_name: ats-flower
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    container_name: ats-frontend
     ports:
-      - "5555:5555"
+      - "3000:80"
     networks:
       - ats-network
     depends_on:
-      - redis
+      ats-java-backend:
+        condition: service_started
     restart: unless-stopped
-    profiles:
-      - dev
 
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  uploads_data:
+    driver: local
+  logs_data:
     driver: local
 
 networks:

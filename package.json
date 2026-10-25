@@ -1,14 +1,12 @@
 {
-    "name": "hr-system-root",
-    "version": "1.0.0",
-    "private": true,
-    "scripts": {
-        "dev": "cd frontend && npm run dev",
-        "build": "cd frontend && npm run build",
-        "start": "cd frontend && npm run dev",
-        "dev:hr": "cd frontend/hr-dashboard && npm run dev",
-        "dev:client": "cd frontend/client-portal && npm run dev",
-        "build:hr": "cd frontend/hr-dashboard && npm run build",
-        "build:client": "cd frontend/client-portal && npm run build"
-    }
+  "name": "hr-system-root",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "backend:build": "cd backend-java && mvn clean package -DskipTests",
+    "compose:up": "docker compose up -d",
+    "compose:down": "docker compose down"
+  }
 }
