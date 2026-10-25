@@ -14,8 +14,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ─── Helper: generate candidate hash ─────────────────────────────────────────
+DROP FUNCTION IF EXISTS generate_candidate_hash(TEXT, TEXT, TEXT) CASCADE;
 CREATE OR REPLACE FUNCTION generate_candidate_hash(
-    p_name TEXT, p_email TEXT, p_phone TEXT
+    p_name TEXT, p_email TEXT DEFAULT NULL, p_phone TEXT DEFAULT NULL
 ) RETURNS VARCHAR(64) AS $$
 BEGIN
     RETURN MD5(LOWER(COALESCE(p_name, '')) || '|' ||
