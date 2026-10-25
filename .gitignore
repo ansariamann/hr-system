@@ -202,8 +202,6 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Sub-projects and build outputs
-frontend/client-portal/
-frontend/hr-dashboard/
+# Build outputs
 backend-java/target/
 frontend/dist/
