@@ -201,3 +201,9 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# Sub-projects and build outputs
+frontend/client-portal/
+frontend/hr-dashboard/
+backend-java/target/
+frontend/dist/

@@ -1,6 +1,5 @@
 package com.ats.worker;
 
-import com.ats.domain.entity.Candidate;
 import com.ats.domain.entity.ResumeJob;
 import com.ats.domain.repository.CandidateRepository;
 import com.ats.domain.repository.ResumeJobRepository;
@@ -8,7 +7,6 @@ import com.ats.resume.PdfExtractionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jobrunr.jobs.annotations.Job;
-import org.jobrunr.spring.annotations.Recurring;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 

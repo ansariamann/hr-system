@@ -5,8 +5,10 @@
     "scripts": {
         "dev": "cd frontend && npm run dev",
         "build": "cd frontend && npm run build",
-        "start": "cd frontend && npm run start",
-        "api": "uvicorn ats_backend.main:app --reload --host 0.0.0.0 --port 8000",
-        "install:frontend": "cd frontend && npm install"
+        "start": "cd frontend && npm run dev",
+        "dev:hr": "cd frontend/hr-dashboard && npm run dev",
+        "dev:client": "cd frontend/client-portal && npm run dev",
+        "build:hr": "cd frontend/hr-dashboard && npm run build",
+        "build:client": "cd frontend/client-portal && npm run build"
     }
 }
