@@ -1,0 +1,118 @@
+# ATS Backend - Spring Boot 3 / Java 21 Configuration
+spring:
+  application:
+    name: ats-backend
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ats_db}
+    username: ${DATABASE_USER:ats_user}
+    password: ${DATABASE_PASSWORD:ats_password}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-init-sql: "SET search_path TO public"
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    validate-on-migrate: true
+
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: false
+    default-property-inclusion: non_null
+
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 20MB
+      max-request-size: 25MB
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
+# Security / JWT
+app:
+  jwt:
+    secret: ${JWT_SECRET:your-very-long-secret-key-at-least-256-bits-for-hs256-algorithm}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5174}
+  storage:
+    upload-dir: ${UPLOAD_DIR:./uploads}
+  tenant:
+    header: X-Tenant-Id
+
+# JobRunr
+org:
+  jobrunr:
+    background-job-server:
+      enabled: true
+      worker-count: 4
+    job-scheduler:
+      enabled: true
+    dashboard:
+      enabled: true
+      port: 8000
+
+# SpringDoc OpenAPI
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+  show-actuator: false
+
+# Server
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+logging:
+  level:
+    com.ats: DEBUG
+    org.springframework.security: INFO
+    org.flywaydb: INFO
+    org.hibernate.SQL: WARN
