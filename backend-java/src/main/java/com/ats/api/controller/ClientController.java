@@ -31,9 +31,9 @@ public class ClientController {
 
     private final ClientRepository clientRepository;
 
-    @Operation(summary = "List all clients (admin only)")
+    @Operation(summary = "List all clients (admin/hr only)")
     @GetMapping
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_ADMIN', 'HR_MANAGER')")
     public ResponseEntity<List<Client>> listClients() {
         return ResponseEntity.ok(clientRepository.findAll());
     }
@@ -53,8 +53,8 @@ public class ClientController {
             @PathVariable UUID id) {
         // Non-admins can only access their own client
         if (!user.getClientId().equals(id)) {
-            String role = user.getRole().name();
-            if (!role.equals("super_admin") && !role.equals("admin")) {
+            String role = user.getRole().name().toLowerCase();
+            if (!role.contains("admin") && !role.contains("manager")) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
             }
         }
@@ -63,9 +63,9 @@ public class ClientController {
         return ResponseEntity.ok(client);
     }
 
-    @Operation(summary = "Create a new client (super admin only)")
+    @Operation(summary = "Create a new client (admin/hr)")
     @PostMapping
-    @PreAuthorize("hasRole('SUPER_ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_ADMIN')")
     public ResponseEntity<Client> createClient(@RequestBody Map<String, Object> body) {
         Client client = Client.builder()
                 .name((String) body.get("name"))
@@ -84,7 +84,7 @@ public class ClientController {
 
     @Operation(summary = "Update a client")
     @PutMapping("/{id}")
-    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_ADMIN')")
     public ResponseEntity<Client> updateClient(
             @PathVariable UUID id,
             @RequestBody Map<String, Object> body) {
@@ -99,8 +99,35 @@ public class ClientController {
         if (body.containsKey("contact_phone")) client.setContactPhone((String) body.get("contact_phone"));
         if (body.containsKey("address"))       client.setAddress((String) body.get("address"));
         if (body.containsKey("website"))       client.setWebsite((String) body.get("website"));
+        if (body.containsKey("email_domain"))  client.setEmailDomain((String) body.get("email_domain"));
         if (body.containsKey("is_active"))     client.setIsActive((Boolean) body.get("is_active"));
 
         return ResponseEntity.ok(clientRepository.save(client));
+    }
+
+    @Operation(summary = "Delete a client")
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
+    public ResponseEntity<Void> deleteClient(@PathVariable UUID id) {
+        Client client = clientRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Client", id));
+        clientRepository.delete(client);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Invite client admin user")
+    @PostMapping("/{id}/invite")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN', 'HR_ADMIN')")
+    public ResponseEntity<Map<String, Object>> inviteClientAdmin(@PathVariable UUID id) {
+        Client client = clientRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Client", id));
+        String token = UUID.randomUUID().toString();
+        String inviteLink = "http://localhost:5173/client/login?inviteToken=" + token + "&clientId=" + id;
+        return ResponseEntity.ok(Map.of(
+                "client_id", id,
+                "client_name", client.getName(),
+                "invite_link", inviteLink,
+                "message", "Invitation link generated successfully for " + client.getName()
+        ));
     }
 }

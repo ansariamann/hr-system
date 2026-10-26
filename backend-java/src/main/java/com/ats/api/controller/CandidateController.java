@@ -167,8 +167,18 @@ public class CandidateController {
             builder.noticePeriodDays(Integer.parseInt(body.get("notice_period_days").toString()));
         if (body.containsKey("date_of_birth"))
             builder.dateOfBirth(LocalDate.parse((String) body.get("date_of_birth")));
-        if (body.containsKey("assigned_user_id"))
-            builder.assignedUserId(UUID.fromString((String) body.get("assigned_user_id")));
+        if (body.containsKey("client_id") && body.get("client_id") != null && !body.get("client_id").toString().isBlank()) {
+            try {
+                builder.clientId(UUID.fromString(body.get("client_id").toString()));
+            } catch (Exception ignored) {}
+        }
+        if (body.containsKey("selected_client_name"))
+            builder.selectedClientName((String) body.get("selected_client_name"));
+        if (body.containsKey("assigned_user_id") && body.get("assigned_user_id") != null && !body.get("assigned_user_id").toString().isBlank()) {
+            try {
+                builder.assignedUserId(UUID.fromString(body.get("assigned_user_id").toString()));
+            } catch (Exception ignored) {}
+        }
 
         return builder.build();
     }

@@ -205,3 +205,4 @@ Thumbs.db
 # Build outputs
 backend-java/target/
 frontend/dist/
+legacy-hr-system/

@@ -81,7 +81,8 @@ public class CandidateService {
         if (updates.getKeySkill() != null)    existing.setKeySkill(updates.getKeySkill());
         if (updates.getRemark() != null)      existing.setRemark(updates.getRemark());
         if (updates.getOtherDetails() != null) existing.setOtherDetails(updates.getOtherDetails());
-        if (updates.getAssignedUserId() != null) existing.setAssignedUserId(updates.getAssignedUserId());
+        if (updates.getClientId() != null)    existing.setClientId(updates.getClientId());
+        if (updates.getSelectedClientName() != null) existing.setSelectedClientName(updates.getSelectedClientName());
         if (updates.getTotalExperienceYears() != null) existing.setTotalExperienceYears(updates.getTotalExperienceYears());
         if (updates.getDateOfBirth() != null) existing.setDateOfBirth(updates.getDateOfBirth());
         if (updates.getPreviousEmployment() != null) existing.setPreviousEmployment(updates.getPreviousEmployment());

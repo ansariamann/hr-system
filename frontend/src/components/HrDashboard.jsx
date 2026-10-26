@@ -1,309 +1,519 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from "react";
+import {
+  Card,
+  Row,
+  Col,
+  Input,
+  Select,
+  InputNumber,
+  Table,
+  Tag,
+  Avatar,
+  Space,
+  Button,
+  Typography,
+  Tooltip,
+} from "antd";
+import {
+  Search,
+  MapPin,
+  Briefcase,
+  ShieldAlert,
+  FileText,
+  Calendar,
+  Send,
+  Eye,
+  RotateCcw,
+  UserCheck,
+  Building2,
+} from "lucide-react";
+
+const { Text } = Typography;
 
 export function HrDashboard({
   candidates,
+  clients = [],
   onReviewCandidate,
   onScheduleInterview,
   onSendToClient,
+  onOpenAssignModal,
   onToggleBlacklist,
   onResetData,
+  onSelectCandidate,
 }) {
-  const [search, setSearch] = useState('');
-  const [selectedSkill, setSelectedSkill] = useState('All');
-  const [selectedLocation, setSelectedLocation] = useState('All');
+  // Search and filter states matching master/list.tsx
+  const [nameSearch, setNameSearch] = useState("");
+  const [skillSearch, setSkillSearch] = useState("");
+  const [selectedCity, setSelectedCity] = useState("All");
+  const [selectedClient, setSelectedClient] = useState("All");
+  const [maxExperience, setMaxExperience] = useState(null);
   const [excludeLeavers, setExcludeLeavers] = useState(true);
+  const [selectedSkillPill, setSelectedSkillPill] = useState("All");
 
-  // Available skills for faceted search
-  const allSkills = useMemo(() => {
-    const set = new Set();
-    candidates.forEach((c) => c.skills?.forEach((s) => set.add(s)));
-    return ['All', ...Array.from(set)];
-  }, [candidates]);
-
-  // Available locations
+  // Extract unique locations
   const allLocations = useMemo(() => {
     const set = new Set();
     candidates.forEach((c) => {
       if (c.location) set.add(c.location);
     });
-    return ['All', ...Array.from(set)];
+    return ["All", ...Array.from(set)];
   }, [candidates]);
 
-  // Filtered candidate list
+  // Extract top skills for quick facet pills
+  const topSkills = useMemo(() => {
+    const map = new Map();
+    candidates.forEach((c) => {
+      c.skills?.forEach((s) => {
+        map.set(s, (map.get(s) || 0) + 1);
+      });
+    });
+    const sorted = Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map((entry) => entry[0]);
+    return ["All", ...sorted.slice(0, 10)];
+  }, [candidates]);
+
+  // Filtered candidate list based on master database rules
   const filteredCandidates = useMemo(() => {
     return candidates.filter((cand) => {
-      // Exclude Leavers / Blacklisted candidates (Strict Policy Enforcement)
+      // Leaver Exclusion Policy
       if (excludeLeavers && cand.isBlacklisted) {
         return false;
       }
-      if (search) {
-        const q = search.toLowerCase();
+
+      // Name & Email filter
+      if (nameSearch) {
+        const q = nameSearch.toLowerCase();
         const matchesName = cand.name?.toLowerCase().includes(q);
         const matchesEmail = cand.email?.toLowerCase().includes(q);
+        if (!matchesName && !matchesEmail) return false;
+      }
+
+      // Skills input filter
+      if (skillSearch) {
+        const q = skillSearch.toLowerCase();
         const matchesSkill = cand.skills?.some((s) => s.toLowerCase().includes(q));
-        if (!matchesName && !matchesEmail && !matchesSkill) return false;
+        if (!matchesSkill) return false;
       }
-      if (selectedSkill !== 'All') {
-        if (!cand.skills?.some((s) => s.toLowerCase() === selectedSkill.toLowerCase())) {
+
+      // Quick facet skill pill
+      if (selectedSkillPill !== "All") {
+        if (!cand.skills?.some((s) => s.toLowerCase() === selectedSkillPill.toLowerCase())) {
           return false;
         }
       }
-      if (selectedLocation !== 'All') {
-        if (!cand.location?.toLowerCase().includes(selectedLocation.toLowerCase())) {
+
+      // City filter
+      if (selectedCity !== "All") {
+        if (!cand.location?.toLowerCase().includes(selectedCity.toLowerCase())) {
           return false;
         }
       }
+
+      // Client filter
+      if (selectedClient !== "All") {
+        if (selectedClient === "Unassigned") {
+          if (cand.clientId || cand.clientName || cand.selectedClientName) return false;
+        } else {
+          const match =
+            cand.clientName === selectedClient ||
+            cand.selectedClientName === selectedClient ||
+            cand.clientId === selectedClient;
+          if (!match) return false;
+        }
+      }
+
+      // Max Experience filter
+      if (maxExperience !== null && maxExperience !== undefined && maxExperience !== "") {
+        if (cand.experienceYears && cand.experienceYears > Number(maxExperience)) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [candidates, search, selectedSkill, selectedLocation, excludeLeavers]);
+  }, [candidates, nameSearch, skillSearch, selectedSkillPill, selectedCity, selectedClient, maxExperience, excludeLeavers]);
 
-  // Calculated Metrics
-  const metrics = useMemo(() => {
-    const total = candidates.length;
-    const inPipeline = candidates.filter((c) => ['submitted', 'interview_scheduled', 'selected'].includes(c.currentStatus)).length;
-    const interviewed = candidates.filter((c) => c.currentStatus === 'interview_scheduled').length;
-    const joined = candidates.filter((c) => c.currentStatus === 'joined').length;
-    const blacklisted = candidates.filter((c) => c.isBlacklisted).length;
-    return { total, inPipeline, interviewed, joined, blacklisted };
-  }, [candidates]);
-
-  const getStatusBadge = (status, isBlacklisted) => {
+  const getStatusTag = (status, isBlacklisted) => {
     if (isBlacklisted) {
-      return <span className="badge badge-left">⚠️ Leaver (Blacklisted)</span>;
+      return <Tag color="error">⚠️ LEAVER (EXCLUDED)</Tag>;
     }
     switch (status) {
-      case 'pool': return <span className="badge badge-pool">Pool</span>;
-      case 'submitted': return <span className="badge badge-submitted">Submitted</span>;
-      case 'interview_scheduled': return <span className="badge badge-interview">Interview</span>;
-      case 'selected': return <span className="badge badge-selected">Selected</span>;
-      case 'joined': return <span className="badge badge-joined">Joined</span>;
-      case 'left_company': return <span className="badge badge-left">Left Company</span>;
-      default: return <span className="badge badge-pool">{status}</span>;
+      case "pool":
+        return <Tag color="default">POOL</Tag>;
+      case "submitted":
+        return <Tag color="cyan">SUBMITTED</Tag>;
+      case "interview_scheduled":
+        return <Tag color="purple">INTERVIEW</Tag>;
+      case "selected":
+        return <Tag color="blue">SELECTED</Tag>;
+      case "joined":
+      case "hired":
+        return <Tag color="green">HIRED</Tag>;
+      case "left_company":
+        return <Tag color="red">LEFT COMPANY</Tag>;
+      default:
+        return <Tag color="default">{status ? status.toUpperCase() : "POOL"}</Tag>;
     }
   };
 
+  const columns = [
+    {
+      title: "Candidate",
+      key: "candidate",
+      render: (_, record) => {
+        const initial = record.name ? record.name[0].toUpperCase() : "C";
+        return (
+          <Space>
+            <Avatar
+              style={{
+                backgroundColor: record.isBlacklisted ? "#ef4444" : "#4f46e5",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+              onClick={() => onSelectCandidate && onSelectCandidate(record)}
+            >
+              {initial}
+            </Avatar>
+            <Space direction="vertical" size={0}>
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 14,
+                  color: record.isBlacklisted ? "#ef4444" : "#0f172a",
+                  cursor: "pointer",
+                }}
+                onClick={() => onSelectCandidate && onSelectCandidate(record)}
+              >
+                {record.name}
+              </div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>
+                {record.email} {record.phone ? `• ${record.phone}` : ""}
+              </div>
+            </Space>
+          </Space>
+        );
+      },
+    },
+    {
+      title: "Skills & Tech Stack",
+      dataIndex: "skills",
+      key: "skills",
+      render: (skills) => {
+        const list = Array.isArray(skills) ? skills : [];
+        if (list.length === 0) return <Text type="secondary">—</Text>;
+        const displayed = list.slice(0, 3);
+        const remaining = list.length - 3;
+        return (
+          <Space wrap size={[4, 4]}>
+            {displayed.map((skill) => (
+              <Tag key={skill} color="geekblue" style={{ fontSize: 11, borderRadius: 4 }}>
+                {skill}
+              </Tag>
+            ))}
+            {remaining > 0 && (
+              <Tag style={{ fontSize: 11, borderRadius: 4 }}>+{remaining}</Tag>
+            )}
+          </Space>
+        );
+      },
+    },
+    {
+      title: "Location",
+      dataIndex: "location",
+      key: "location",
+      render: (loc) => (
+        <Space size={4}>
+          <MapPin size={13} style={{ color: "#64748b" }} />
+          <Text style={{ fontSize: 13 }}>{loc || "Remote"}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: "Experience / CTC",
+      key: "exp_ctc",
+      render: (_, record) => (
+        <Space direction="vertical" size={0}>
+          <Text strong style={{ fontSize: 13, color: "#1e293b" }}>
+            {record.experienceYears ? `${record.experienceYears} yrs exp` : "—"}
+          </Text>
+          <Text style={{ fontSize: 12, color: "#10b981", fontWeight: 600 }}>
+            {record.ctcCurrent ? `₹${(record.ctcCurrent / 100000).toFixed(1)} LPA` : "Not disclosed"}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: "Assigned Client",
+      key: "client",
+      render: (_, record) => {
+        const clientName = record.selectedClientName || record.clientName;
+        return clientName ? (
+          <Tag
+            color="blue"
+            icon={<Building2 size={11} style={{ marginRight: 3, verticalAlign: "middle" }} />}
+            style={{ borderRadius: 4, fontSize: 11, padding: "1px 6px" }}
+          >
+            {clientName}
+          </Tag>
+        ) : (
+          <Tag style={{ borderRadius: 4, fontSize: 11, color: "#94a3b8" }}>
+            Unassigned
+          </Tag>
+        );
+      },
+    },
+    {
+      title: "Status",
+      key: "status",
+      render: (_, record) => getStatusTag(record.currentStatus, record.isBlacklisted),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      align: "right",
+      render: (_, record) => (
+        <Space size={4}>
+          <Tooltip title="View Candidate Profile">
+            <Button
+              size="small"
+              icon={<Eye size={13} />}
+              onClick={() => onSelectCandidate && onSelectCandidate(record)}
+            />
+          </Tooltip>
+          <Tooltip title="Split-Screen Document Review">
+            <Button
+              size="small"
+              icon={<FileText size={13} />}
+              onClick={() => onReviewCandidate(record)}
+            >
+              Review
+            </Button>
+          </Tooltip>
+          <Tooltip title="Schedule Direct Interview">
+            <Button
+              size="small"
+              type="primary"
+              icon={<Calendar size={13} />}
+              onClick={() => onScheduleInterview(record)}
+              style={{ background: "#4f46e5" }}
+            >
+              Interview
+            </Button>
+          </Tooltip>
+          <Tooltip title="Assign Profile to Client Portal">
+            <Button
+              size="small"
+              icon={<Send size={13} />}
+              onClick={() => {
+                if (onOpenAssignModal) {
+                  onOpenAssignModal(record);
+                } else {
+                  onSendToClient(record.id);
+                }
+              }}
+              style={{ color: "#4f46e5", borderColor: "#c7d2fe" }}
+            >
+              Assign
+            </Button>
+          </Tooltip>
+        </Space>
+      ),
+    },
+  ];
+
   return (
     <div>
-      {/* Metrics Row */}
-      <div className="metrics-grid">
-        <div className="metric-card">
-          <div className="metric-header">
-            <span>Total Candidates</span>
-            <span>👥</span>
-          </div>
-          <div className="metric-value">{metrics.total}</div>
-          <div className="metric-footer">Across all tenant pools</div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-header">
-            <span>In Client Review</span>
-            <span>⚡</span>
-          </div>
-          <div className="metric-value" style={{ color: '#38bdf8' }}>{metrics.inPipeline}</div>
-          <div className="metric-footer">Active FSM applications</div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-header">
-            <span>Interviews Scheduled</span>
-            <span>📅</span>
-          </div>
-          <div className="metric-value" style={{ color: '#a5b4fc' }}>{metrics.interviewed}</div>
-          <div className="metric-footer">Direct & Client rounds</div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-header">
-            <span>Ex-Employees Excluded</span>
-            <span>🛡️</span>
-          </div>
-          <div className="metric-value" style={{ color: '#fca5a5' }}>{metrics.blacklisted}</div>
-          <div className="metric-footer">Automatic Leaver loop enforced</div>
-        </div>
-      </div>
-
-      {/* Main Candidate Card & Faceted Search */}
-      <div className="card">
-        <div className="card-header">
+      <Card
+        bordered={false}
+        style={{
+          borderRadius: 12,
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          marginBottom: 20,
+        }}
+      >
+        {/* Header & Reset Button */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 20,
+          }}
+        >
           <div>
-            <h2 style={{ fontSize: '1.15rem' }}>Master Candidate Database</h2>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-              PostgreSQL Native Full-Text Search with JSONB Skills & Automatic Exclusion
-            </div>
+            <h2 style={{ fontSize: "1.15rem", margin: 0, fontWeight: 700, color: "#0f172a" }}>
+              Master Candidate Database
+            </h2>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              High-speed multi-faceted talent search with JSONB skills & automatic compliance exclusion
+            </Text>
           </div>
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-            <button className="btn btn-secondary btn-sm" onClick={onResetData} title="Reset demo records">
-              🔄 Reset Demo DB
-            </button>
-          </div>
+          <Button
+            icon={<RotateCcw size={14} style={{ marginRight: 4 }} />}
+            size="small"
+            onClick={onResetData}
+          >
+            Reset Demo DB
+          </Button>
         </div>
 
-        {/* Faceted Search Bar */}
-        <div className="search-filter-section">
-          <div className="search-bar-row">
-            <div className="search-input-wrapper">
-              <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              </svg>
-              <input
-                type="text"
-                className="search-input"
-                placeholder="Search candidates by name, email, or skill keywords..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+        {/* Multi-Filter Search Bar matching master/list.tsx */}
+        <div style={{ background: "#f8fafc", padding: 16, borderRadius: 8, marginBottom: 16 }}>
+          <Row gutter={[12, 12]}>
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#475569" }}>
+                Candidate Name / Email
+              </div>
+              <Input
+                placeholder="Search by name or email..."
+                prefix={<Search size={14} style={{ color: "#94a3b8" }} />}
+                value={nameSearch}
+                onChange={(e) => setNameSearch(e.target.value)}
+                allowClear
               />
-            </div>
+            </Col>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>City:</span>
-              <select
-                className="form-select"
-                style={{ padding: '0.5rem 0.85rem', fontSize: '0.82rem' }}
-                value={selectedLocation}
-                onChange={(e) => setSelectedLocation(e.target.value)}
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#475569" }}>
+                Skills (e.g. Java, React, Python)
+              </div>
+              <Input
+                placeholder="Search skills..."
+                prefix={<Search size={14} style={{ color: "#94a3b8" }} />}
+                value={skillSearch}
+                onChange={(e) => setSkillSearch(e.target.value)}
+                allowClear
+              />
+            </Col>
+
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#475569" }}>
+                Client Organization
+              </div>
+              <Select
+                value={selectedClient}
+                onChange={(val) => setSelectedClient(val)}
+                style={{ width: "100%" }}
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.children ?? "").toLowerCase().includes(input.toLowerCase())
+                }
+              >
+                <Select.Option value="All">All Clients</Select.Option>
+                <Select.Option value="Unassigned">Unassigned Candidates</Select.Option>
+                {clients.map((c) => (
+                  <Select.Option key={c.id} value={c.name}>
+                    {c.name}
+                  </Select.Option>
+                ))}
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={5}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#475569" }}>
+                City / Location
+              </div>
+              <Select
+                value={selectedCity}
+                onChange={(val) => setSelectedCity(val)}
+                style={{ width: "100%" }}
               >
                 {allLocations.map((loc) => (
-                  <option key={loc} value={loc}>{loc}</option>
+                  <Select.Option key={loc} value={loc}>
+                    {loc}
+                  </Select.Option>
                 ))}
-              </select>
+              </Select>
+            </Col>
+
+            <Col xs={24} sm={12} md={4}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: "#475569" }}>
+                Max Exp (Yrs)
+              </div>
+              <InputNumber
+                placeholder="e.g. 5"
+                min={0}
+                max={30}
+                value={maxExperience}
+                onChange={(val) => setMaxExperience(val)}
+                style={{ width: "100%" }}
+              />
+            </Col>
+          </Row>
+
+          {/* Skill Pills & Leaver Policy Banner */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+              marginTop: 14,
+              paddingTop: 12,
+              borderTop: "1px solid #e2e8f0",
+            }}
+          >
+            {/* Quick Skill Filter Pills */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: "#64748b", fontWeight: 600 }}>Top Skills:</span>
+              {topSkills.map((s) => (
+                <Tag
+                  key={s}
+                  color={selectedSkillPill === s ? "purple" : "default"}
+                  style={{
+                    cursor: "pointer",
+                    borderRadius: 12,
+                    padding: "2px 10px",
+                    fontWeight: selectedSkillPill === s ? 600 : 400,
+                  }}
+                  onClick={() => setSelectedSkillPill(s)}
+                >
+                  {s}
+                </Tag>
+              ))}
             </div>
 
-            {/* Leaver Exclusion Policy Banner / Toggle */}
+            {/* Leaver Exclusion Policy Banner */}
             <div
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                cursor: 'pointer',
-                background: excludeLeavers ? 'rgba(239, 68, 68, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-                padding: '6px 12px',
-                borderRadius: 'var(--radius-full)',
-                border: '1px solid ' + (excludeLeavers ? 'rgba(239, 68, 68, 0.35)' : 'var(--border-subtle)'),
-                transition: 'all 200ms ease'
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                cursor: "pointer",
+                padding: "6px 12px",
+                borderRadius: 20,
+                background: excludeLeavers ? "#fef2f2" : "#f1f5f9",
+                border: `1px solid ${excludeLeavers ? "#fca5a5" : "#cbd5e1"}`,
               }}
               onClick={() => setExcludeLeavers(!excludeLeavers)}
               title="Per the Architecture Blueprint: Terminated former employees are automatically excluded from searches"
             >
-              <input
-                type="checkbox"
-                checked={excludeLeavers}
-                onChange={(e) => setExcludeLeavers(e.target.checked)}
-                style={{ accentColor: '#ef4444', cursor: 'pointer' }}
-              />
-              <span style={{ fontSize: '0.75rem', fontWeight: '600', color: excludeLeavers ? '#fca5a5' : 'var(--text-secondary)' }}>
-                {excludeLeavers ? '🛡️ Policy: Exclude Ex-Employees (ACTIVE)' : '⚠️ Ex-Employees Included (Audit)'}
+              <ShieldAlert size={15} color={excludeLeavers ? "#ef4444" : "#64748b"} />
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: excludeLeavers ? "#b91c1c" : "#475569",
+                }}
+              >
+                {excludeLeavers
+                  ? "Policy: Ex-Employees Quarantined (ACTIVE)"
+                  : "Audit Mode: Ex-Employees Included"}
               </span>
             </div>
           </div>
-
-          {/* Faceted Skill Pills */}
-          <div className="filter-pills">
-            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Skills:</span>
-            {allSkills.slice(0, 10).map((skill) => (
-              <button
-                key={skill}
-                className={`filter-pill ${selectedSkill === skill ? 'active' : ''}`}
-                onClick={() => setSelectedSkill(skill)}
-              >
-                {skill}
-              </button>
-            ))}
-          </div>
         </div>
 
-        {/* Data Table */}
-        <div className="table-responsive">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Candidate</th>
-                <th>Location</th>
-                <th>Key Skills (JSONB)</th>
-                <th>Exp / CTC</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredCandidates.length === 0 ? (
-                <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                    No candidates match the current faceted filters.
-                  </td>
-                </tr>
-              ) : (
-                filteredCandidates.map((cand) => (
-                  <tr key={cand.id}>
-                    <td>
-                      <div style={{ fontWeight: '600', color: cand.isBlacklisted ? '#fca5a5' : '#fff' }}>
-                        {cand.name}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {cand.email} • {cand.phone || 'No phone'}
-                      </div>
-                    </td>
-
-                    <td>
-                      <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                        📍 {cand.location || 'Remote'}
-                      </span>
-                    </td>
-
-                    <td>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxWidth: '280px' }}>
-                        {cand.skills?.map((s) => (
-                          <span key={s} className="skill-tag">{s}</span>
-                        ))}
-                      </div>
-                    </td>
-
-                    <td>
-                      <div style={{ fontSize: '0.82rem' }}>{cand.experienceYears} yrs exp</div>
-                      <div style={{ fontSize: '0.75rem', color: '#34d399', fontWeight: '600' }}>
-                        ₹{cand.ctcCurrent ? (cand.ctcCurrent / 100000).toFixed(1) + ' LPA' : 'N/A'}
-                      </div>
-                    </td>
-
-                    <td>
-                      {getStatusBadge(cand.currentStatus, cand.isBlacklisted)}
-                    </td>
-
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => onReviewCandidate(cand)}
-                          title="Open Split-Screen Document & Entity Review"
-                        >
-                          📄 Review
-                        </button>
-
-                        <button
-                          className="btn btn-primary btn-sm"
-                          onClick={() => onScheduleInterview(cand)}
-                          title="Schedule Direct Interview"
-                        >
-                          📅 Interview
-                        </button>
-
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => onSendToClient(cand.id)}
-                          title="Send Profile to Client Portal via FSM"
-                        >
-                          🚀 Send
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+        {/* Ant Design Candidates Table */}
+        <Table
+          columns={columns}
+          dataSource={filteredCandidates}
+          rowKey="id"
+          pagination={{ pageSize: 10, showSizeChanger: true }}
+        />
+      </Card>
     </div>
   );
 }
