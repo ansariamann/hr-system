@@ -3,7 +3,9 @@
 // Falls back to rich local demo state when backend is offline
 
 const API_BASE = (
-  window._ATS_API_URL || "http://localhost:8080/api/v1"
+  (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_API_URL) ||
+  window._ATS_API_URL ||
+  "http://localhost:8080/api/v1"
 ).replace(/\/+$/, "");
 
 let authToken = localStorage.getItem("ats_auth_token");
