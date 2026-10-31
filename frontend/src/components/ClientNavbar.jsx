@@ -36,7 +36,7 @@ export function ClientNavbar({ onRequestRole }) {
             </span>
           </div>
           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            Tenant: acme-tenant-882 • Magic Link Verified
+            Client Organization Workspace
           </div>
         </div>
       </div>
@@ -56,7 +56,7 @@ export function ClientNavbar({ onRequestRole }) {
             fontWeight: '600',
           }}
         >
-          <span>🔒 Secure Client Session</span>
+          <span>Client Portal</span>
         </div>
 
         <button className="btn btn-primary btn-sm" onClick={onRequestRole}>

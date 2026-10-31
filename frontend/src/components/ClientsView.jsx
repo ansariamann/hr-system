@@ -456,7 +456,7 @@ export function ClientsView({
               </div>
             </div>
             <div style={{ fontSize: 12, color: "#16a34a", marginTop: 8, fontWeight: 500 }}>
-              PostgreSQL Row-Level Security Enforced
+              Tenant Isolation Scoped
             </div>
           </Card>
         </Col>
@@ -772,7 +772,7 @@ export function ClientsView({
             <Alert
               type="success"
               message={`Organization "${provisionResult.client.name}" is now live.`}
-              description="The tenant is initialized with database Row-Level Security partition and ready for candidate submissions."
+              description="The tenant is provisioned and ready for candidate submissions."
               style={{ marginBottom: 16 }}
             />
 

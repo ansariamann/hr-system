@@ -19,10 +19,14 @@ export function ClientLogin() {
     const password = formData.get("password");
 
     try {
-      const result = await login(email, password, "client");
+      const result = await login(email, password);
 
       if (result.success) {
-        navigate("/portal/dashboard", { replace: true });
+        if (result.user?.role?.includes("CLIENT")) {
+          navigate("/portal/dashboard", { replace: true });
+        } else {
+          navigate("/hr/dashboard", { replace: true });
+        }
       } else {
         setError(result.error || "Invalid email or password");
       }
@@ -38,11 +42,30 @@ export function ClientLogin() {
       <div className="w-full max-w-md border-0 shadow-2xl bg-white/80 backdrop-blur-sm rounded-lg overflow-hidden">
         {/* Card Header */}
         <div className="space-y-1 p-6 pb-4">
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #0284c7 0%, #2563eb 100%)",
+                color: "#ffffff",
+                fontWeight: 800,
+                fontSize: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(37, 99, 235, 0.35)",
+              }}
+            >
+              CP
+            </div>
+          </div>
           <h2 className="text-2xl font-bold tracking-tight text-center text-gray-900">
             Client Portal
           </h2>
           <p className="text-sm text-gray-500 text-center">
-            Enter your email to sign in to your account
+            Sign in to view shortlists and candidates
           </p>
         </div>
 
@@ -54,13 +77,13 @@ export function ClientLogin() {
                 htmlFor="email"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-gray-700"
               >
-                Email
+                Client Email
               </label>
               <input
                 id="email"
                 name="email"
                 type="email"
-                placeholder="client@example.com"
+                placeholder="name@client.com"
                 required
                 disabled={isLoading}
                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -78,6 +101,7 @@ export function ClientLogin() {
                 id="password"
                 name="password"
                 type="password"
+                placeholder="••••••••"
                 required
                 disabled={isLoading}
                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -151,12 +175,12 @@ export function ClientLogin() {
             </button>
 
             <div className="text-sm text-gray-500 text-center">
-              Internal HR staff?{" "}
+              Are you an HR Admin?{" "}
               <Link
                 to="/admin/login"
                 className="text-blue-600 hover:underline font-medium"
               >
-                Access Admin Portal
+                Access HR Enterprise Portal
               </Link>
             </div>
           </div>

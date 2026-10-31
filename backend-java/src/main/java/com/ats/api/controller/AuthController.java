@@ -54,8 +54,13 @@ public class AuthController {
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/register")
     @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ADMIN')")
-    public ResponseEntity<Map<String, Object>> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<Map<String, Object>> register(
+            @AuthenticationPrincipal User caller,
+            @Valid @RequestBody RegisterRequest request) {
+
+        // Role and clientId are validated inside AuthService against the caller's privilege
         User user = authService.register(
+                caller,
                 request.getEmail(),
                 request.getPassword(),
                 request.getFullName(),
@@ -66,9 +71,9 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
                 "id", user.getId(),
                 "email", user.getEmail(),
-                "full_name", user.getFullName(),
+                "full_name", user.getFullName() != null ? user.getFullName() : "",
                 "role", user.getRole().name(),
-                "client_id", user.getClientId()
+                "client_id", user.getClientId() != null ? user.getClientId() : ""
         ));
     }
 
@@ -81,7 +86,7 @@ public class AuthController {
                 "email", user.getEmail(),
                 "full_name", user.getFullName() != null ? user.getFullName() : "",
                 "role", user.getRole().name(),
-                "client_id", user.getClientId(),
+                "client_id", user.getClientId() != null ? user.getClientId() : "",
                 "is_active", user.getIsActive()
         ));
     }
@@ -103,7 +108,7 @@ public class AuthController {
         return ResponseEntity.ok(Map.of(
                 "valid", true,
                 "user_id", user.getId(),
-                "client_id", user.getClientId(),
+                "client_id", user.getClientId() != null ? user.getClientId() : "",
                 "role", user.getRole().name()
         ));
     }

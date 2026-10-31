@@ -2,7 +2,9 @@ package com.ats.api.controller;
 
 import com.ats.domain.entity.CompanyEmployee;
 import com.ats.domain.entity.User;
+import com.ats.domain.enums.UserRole;
 import com.ats.domain.repository.CompanyEmployeeRepository;
+import com.ats.exception.AtsException;
 import com.ats.exception.ResourceNotFoundException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -13,6 +15,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -32,14 +35,28 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CompanyEmployeeController {
 
+    private static final int MAX_PAGE_SIZE = 200;
+
     private final CompanyEmployeeRepository companyEmployeeRepository;
 
     @Operation(summary = "List all company employees (paginated)")
     @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER','CLIENT_ADMIN','CLIENT_USER')")
     public ResponseEntity<Page<CompanyEmployee>> listEmployees(
             @AuthenticationPrincipal User user,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+
+        size = Math.min(size, MAX_PAGE_SIZE);
+
+        if (user.getClientId() == null) {
+            if (user.getRole() == UserRole.super_admin) {
+                return ResponseEntity.ok(companyEmployeeRepository.findAll(
+                        PageRequest.of(page, size, Sort.by("createdAt").descending())));
+            }
+            throw new AtsException("Tenant context required", HttpStatus.FORBIDDEN);
+        }
+
         return ResponseEntity.ok(
                 companyEmployeeRepository.findAllByClientId(
                         user.getClientId(),
@@ -48,44 +65,87 @@ public class CompanyEmployeeController {
 
     @Operation(summary = "List active employees only")
     @GetMapping("/active")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER','CLIENT_ADMIN','CLIENT_USER')")
     public ResponseEntity<List<CompanyEmployee>> listActiveEmployees(
             @AuthenticationPrincipal User user) {
+
+        if (user.getClientId() == null) {
+            if (user.getRole() == UserRole.super_admin) {
+                return ResponseEntity.ok(companyEmployeeRepository.findAll());
+            }
+            throw new AtsException("Tenant context required", HttpStatus.FORBIDDEN);
+        }
+
         return ResponseEntity.ok(
                 companyEmployeeRepository.findAllByClientIdAndIsActiveTrue(user.getClientId()));
     }
 
     @Operation(summary = "Get a company employee by ID")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER','CLIENT_ADMIN','CLIENT_USER')")
     public ResponseEntity<CompanyEmployee> getEmployee(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id) {
-        CompanyEmployee employee = companyEmployeeRepository
-                .findByIdAndClientId(id, user.getClientId())
-                .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+
+        CompanyEmployee employee;
+        if (user.getClientId() == null) {
+            if (user.getRole() == UserRole.super_admin) {
+                employee = companyEmployeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+            } else {
+                throw new AtsException("Tenant context required", HttpStatus.FORBIDDEN);
+            }
+        } else {
+            employee = companyEmployeeRepository
+                    .findByIdAndClientId(id, user.getClientId())
+                    .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+        }
+
         return ResponseEntity.ok(employee);
     }
 
     @Operation(summary = "Create a company employee manually")
     @PostMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','CLIENT_ADMIN')")
     public ResponseEntity<CompanyEmployee> createEmployee(
             @AuthenticationPrincipal User user,
             @RequestBody Map<String, Object> body) {
 
-        CompanyEmployee employee = buildEmployeeFromBody(body, user.getClientId());
+        UUID targetClientId = user.getClientId();
+        if (targetClientId == null) {
+            if (user.getRole() == UserRole.super_admin && body.containsKey("client_id")) {
+                targetClientId = UUID.fromString((String) body.get("client_id"));
+            } else {
+                throw new AtsException("A client tenant ID is required to create an employee", HttpStatus.BAD_REQUEST);
+            }
+        }
+
+        CompanyEmployee employee = buildEmployeeFromBody(body, targetClientId);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(companyEmployeeRepository.save(employee));
     }
 
     @Operation(summary = "Update a company employee")
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','CLIENT_ADMIN')")
     public ResponseEntity<CompanyEmployee> updateEmployee(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id,
             @RequestBody Map<String, Object> body) {
 
-        CompanyEmployee employee = companyEmployeeRepository
-                .findByIdAndClientId(id, user.getClientId())
-                .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+        CompanyEmployee employee;
+        if (user.getClientId() == null) {
+            if (user.getRole() == UserRole.super_admin) {
+                employee = companyEmployeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+            } else {
+                throw new AtsException("Tenant context required", HttpStatus.FORBIDDEN);
+            }
+        } else {
+            employee = companyEmployeeRepository
+                    .findByIdAndClientId(id, user.getClientId())
+                    .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+        }
 
         if (body.containsKey("name"))           employee.setName((String) body.get("name"));
         if (body.containsKey("email"))          employee.setEmail((String) body.get("email"));
@@ -103,12 +163,25 @@ public class CompanyEmployeeController {
 
     @Operation(summary = "Delete a company employee")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','CLIENT_ADMIN')")
     public ResponseEntity<Void> deleteEmployee(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id) {
-        CompanyEmployee employee = companyEmployeeRepository
-                .findByIdAndClientId(id, user.getClientId())
-                .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+
+        CompanyEmployee employee;
+        if (user.getClientId() == null) {
+            if (user.getRole() == UserRole.super_admin) {
+                employee = companyEmployeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+            } else {
+                throw new AtsException("Tenant context required", HttpStatus.FORBIDDEN);
+            }
+        } else {
+            employee = companyEmployeeRepository
+                    .findByIdAndClientId(id, user.getClientId())
+                    .orElseThrow(() -> new ResourceNotFoundException("CompanyEmployee", id));
+        }
+
         companyEmployeeRepository.delete(employee);
         return ResponseEntity.noContent().build();
     }

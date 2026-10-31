@@ -51,12 +51,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UUID clientId = jwtService.extractClientId(token);
                 String role = jwtService.extractRole(token);
 
-                // Set tenant context for RLS
-                TenantContext.setCurrentTenantId(clientId.toString());
-
                 User user = userRepository.findById(userId).orElse(null);
                 if (user != null && Boolean.TRUE.equals(user.getIsActive())) {
-                    var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role.toUpperCase()));
+                    // Authoritative role and tenant from DB (prevents privilege persistence after demotion or tenant re-assignment)
+                    String roleStr = user.getRole() != null ? user.getRole().name().toUpperCase() : "CLIENT_USER";
+                    var authorities = List.of(
+                            new SimpleGrantedAuthority("ROLE_" + roleStr),
+                            new SimpleGrantedAuthority(roleStr)
+                    );
+
+                    if (user.getClientId() != null) {
+                        TenantContext.setCurrentTenantId(user.getClientId().toString());
+                    }
+
                     var authToken = new UsernamePasswordAuthenticationToken(user, null, authorities);
                     authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                     SecurityContextHolder.getContext().setAuthentication(authToken);
@@ -65,10 +72,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             filterChain.doFilter(request, response);
 
+        } catch (Exception e) {
+            log.error("Authentication filter exception: {}", e.getMessage(), e);
+            filterChain.doFilter(request, response);
         } finally {
             // Always clear tenant context to prevent pool reuse leaks
             TenantContext.clear();
-            SecurityContextHolder.clearContext();
         }
     }
 

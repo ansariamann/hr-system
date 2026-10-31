@@ -1,6 +1,7 @@
 package com.ats.domain.entity;
 
 import com.ats.domain.enums.CandidateStatus;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.*;
@@ -41,6 +42,7 @@ public class Candidate extends BaseEntity {
     @Column(name = "client_id")
     private UUID clientId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", insertable = false, updatable = false)
     private Client client;
@@ -70,6 +72,7 @@ public class Candidate extends BaseEntity {
     @Column(name = "key_skill", columnDefinition = "TEXT")
     private String keySkill;
 
+    @JsonIgnore
     @Column(name = "resume_file_path", columnDefinition = "TEXT")
     private String resumeFilePath;
 
@@ -79,6 +82,7 @@ public class Candidate extends BaseEntity {
     @Column(name = "assigned_user_id")
     private UUID assignedUserId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assigned_user_id", insertable = false, updatable = false)
     private User assignedUser;
@@ -137,6 +141,7 @@ public class Candidate extends BaseEntity {
     private Map<String, Object> otherDetails;
 
     // ─── Relationships ──────────────────────────────────────────────────
+    @JsonIgnore
     @OneToMany(mappedBy = "candidate", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<Application> applications;
 }

@@ -29,7 +29,6 @@ export function ProtectedRoute({
   }
 
   if (!user) {
-    // Not logged in - redirect to appropriate login page
     if (requireAdmin) {
       return <Navigate to="/admin/login" replace />;
     }
@@ -39,13 +38,19 @@ export function ProtectedRoute({
     return <Navigate to="/admin/login" replace />;
   }
 
-  // Check role-based access
-  if (requireAdmin && user.userType !== "admin") {
-    return <Navigate to="/client/login" replace />;
+  // Check role-based access based on server-verified role
+  const roleUpper = (user.role || "").toUpperCase();
+  const isClientRole = roleUpper.includes("CLIENT");
+  const isAdminRole = !isClientRole;
+
+  if (requireAdmin && !isAdminRole) {
+    // Client role user attempted to access Admin dashboard -> redirect to client portal
+    return <Navigate to="/portal/dashboard" replace />;
   }
 
-  if (requireClient && user.userType !== "client") {
-    return <Navigate to="/admin/login" replace />;
+  if (requireClient && !isClientRole) {
+    // Admin/HR role user attempted to access Client portal -> redirect to HR dashboard
+    return <Navigate to="/hr/dashboard" replace />;
   }
 
   return children;

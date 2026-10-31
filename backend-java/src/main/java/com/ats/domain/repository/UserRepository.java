@@ -1,6 +1,7 @@
 package com.ats.domain.repository;
 
 import com.ats.domain.entity.User;
+import com.ats.domain.enums.UserRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,6 +17,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByEmail(String email);
 
     boolean existsByEmail(String email);
+
+    boolean existsByRole(UserRole role);
 
     List<User> findAllByClientId(UUID clientId);
 

@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { Upload, FileText, CheckCircle2, Loader2 } from 'lucide-react';
+import { api } from '../api';
 
 export function AddCandidateModal({ onClose, onAdd, clients = [] }) {
   const [formData, setFormData] = useState({
@@ -15,6 +17,37 @@ export function AddCandidateModal({ onClose, onAdd, clients = [] }) {
     notes: 'Ingested candidate via HR direct input.',
     resumeText: '',
   });
+
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setUploadedFileName(file.name);
+    try {
+      const candidate = await api.uploadResume(file, formData.clientId);
+      if (candidate) {
+        setFormData((prev) => ({
+          ...prev,
+          name: candidate.name || prev.name,
+          email: candidate.email || prev.email,
+          phone: candidate.phone || prev.phone,
+          location: candidate.location || prev.location,
+          skills: Array.isArray(candidate.skills) ? candidate.skills.join(', ') : (candidate.skills || prev.skills),
+          experienceYears: candidate.experienceYears || prev.experienceYears,
+          resumeText: candidate.resumeParsed?.parsedText || candidate.notes || prev.resumeText,
+          notes: `Parsed resume document: ${file.name}`,
+        }));
+      }
+    } catch (err) {
+      console.error("Resume file parse error:", err);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -34,7 +67,9 @@ export function AddCandidateModal({ onClose, onAdd, clients = [] }) {
     e.preventDefault();
     onAdd({
       ...formData,
-      skills: formData.skills.split(',').map((s) => s.trim()).filter(Boolean),
+      skills: typeof formData.skills === 'string'
+        ? formData.skills.split(',').map((s) => s.trim()).filter(Boolean)
+        : formData.skills,
       experienceYears: Number(formData.experienceYears) || 0,
       ctcCurrent: Number(formData.ctcCurrent) || 0,
       ctcExpected: Number(formData.ctcExpected) || 0,
@@ -60,6 +95,55 @@ export function AddCandidateModal({ onClose, onAdd, clients = [] }) {
         </div>
 
         <form onSubmit={handleSubmit} style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Resume Upload Dropzone */}
+          <div
+            style={{
+              border: '2px dashed #cbd5e1',
+              borderRadius: 8,
+              padding: '16px',
+              textAlign: 'center',
+              background: '#f8fafc',
+              cursor: 'pointer',
+              position: 'relative',
+            }}
+          >
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.txt"
+              onChange={handleFileUpload}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                height: '100%',
+                opacity: 0,
+                cursor: 'pointer',
+              }}
+            />
+            {uploading ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#4f46e5' }}>
+                <Loader2 size={20} className="animate-spin" />
+                <span>Extracting resume text & auto-populating fields...</span>
+              </div>
+            ) : uploadedFileName ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#16a34a' }}>
+                <CheckCircle2 size={20} />
+                <span>Loaded <strong>{uploadedFileName}</strong> (Fields auto-populated below)</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, color: '#64748b' }}>
+                <Upload size={24} color="#6366f1" />
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                  Click or drag resume (PDF, DOCX) to auto-fill candidate details
+                </span>
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                  Instant text extraction via Apache PDFBox / OCR
+                </span>
+              </div>
+            )}
+          </div>
+
           <div className="form-row">
             <div className="form-group">
               <label className="form-label">Full Name *</label>

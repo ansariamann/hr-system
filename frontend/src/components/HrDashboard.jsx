@@ -13,6 +13,7 @@ import {
   Button,
   Typography,
   Tooltip,
+  message,
 } from "antd";
 import {
   Search,
@@ -26,6 +27,10 @@ import {
   RotateCcw,
   UserCheck,
   Building2,
+  Download,
+  FileSpreadsheet,
+  CheckSquare,
+  X,
 } from "lucide-react";
 
 const { Text } = Typography;
@@ -49,6 +54,89 @@ export function HrDashboard({
   const [maxExperience, setMaxExperience] = useState(null);
   const [excludeLeavers, setExcludeLeavers] = useState(true);
   const [selectedSkillPill, setSelectedSkillPill] = useState("All");
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [selectedRows, setSelectedRows] = useState([]);
+
+  // CSV and JSON export helper
+  const handleExportCsv = (candidateList, filenamePrefix = "candidates_export") => {
+    if (!candidateList || candidateList.length === 0) {
+      message.warning("No candidates to export");
+      return;
+    }
+    const headers = [
+      "Candidate Name",
+      "Email",
+      "Phone",
+      "City/Location",
+      "Skills",
+      "Experience (Years)",
+      "Current CTC (INR)",
+      "Expected CTC (INR)",
+      "Assigned Client",
+      "Status",
+      "Quarantined/Blacklisted",
+      "Notes",
+    ];
+
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      let str = String(val).replace(/"/g, '""');
+      // Prevent CSV Injection (formula injection) by prepending a single quote,
+      // but do not mangle genuine phone numbers starting with '+' followed by digits.
+      const isPhoneNumber = /^\+[\d\s\-()]+$/.test(str);
+      if (/^[=@\t\r]/.test(str) || (/^[+\-]/.test(str) && !isPhoneNumber)) {
+        str = `'${str}`;
+      }
+      return `"${str}"`;
+    };
+
+    const rows = candidateList.map((c) =>
+      [
+        escapeCsv(c.name || ""),
+        escapeCsv(c.email || ""),
+        escapeCsv(c.phone || ""),
+        escapeCsv(c.location || ""),
+        escapeCsv(Array.isArray(c.skills) ? c.skills.join(", ") : ""),
+        escapeCsv(c.experienceYears ?? ""),
+        escapeCsv(c.ctcCurrent ?? ""),
+        escapeCsv(c.ctcExpected ?? ""),
+        escapeCsv(c.selectedClientName || c.clientName || "Unassigned"),
+        escapeCsv(c.currentStatus || "pool"),
+        escapeCsv(c.isBlacklisted ? "YES" : "NO"),
+        escapeCsv(c.notes || ""),
+      ].join(",")
+    );
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    message.success(`Exported ${candidateList.length} candidate(s) to CSV!`);
+  };
+
+  const handleExportJson = (candidateList, filenamePrefix = "candidates_export") => {
+    if (!candidateList || candidateList.length === 0) {
+      message.warning("No candidates to export");
+      return;
+    }
+    const jsonStr = JSON.stringify(candidateList, null, 2);
+    const blob = new Blob([jsonStr], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.json`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    message.success(`Exported ${candidateList.length} candidate(s) to JSON!`);
+  };
 
   // Extract unique locations
   const allLocations = useMemo(() => {
@@ -349,13 +437,22 @@ export function HrDashboard({
               High-speed multi-faceted talent search with JSONB skills & automatic compliance exclusion
             </Text>
           </div>
-          <Button
-            icon={<RotateCcw size={14} style={{ marginRight: 4 }} />}
-            size="small"
-            onClick={onResetData}
-          >
-            Reset Demo DB
-          </Button>
+          <Space>
+            <Button
+              icon={<Download size={14} style={{ marginRight: 4 }} />}
+              size="small"
+              onClick={() => handleExportCsv(filteredCandidates, "all_filtered_candidates")}
+            >
+              Export Filtered ({filteredCandidates.length}) to CSV
+            </Button>
+            <Button
+              icon={<RotateCcw size={14} style={{ marginRight: 4 }} />}
+              size="small"
+              onClick={onResetData}
+            >
+              Refresh Data
+            </Button>
+          </Space>
         </div>
 
         {/* Multi-Filter Search Bar matching master/list.tsx */}
@@ -506,11 +603,69 @@ export function HrDashboard({
           </div>
         </div>
 
+        {/* Bulk Actions Floating Toolbar */}
+        {selectedRowKeys.length > 0 && (
+          <div
+            style={{
+              background: "#e0e7ff",
+              border: "1px solid #c7d2fe",
+              borderRadius: 8,
+              padding: "10px 16px",
+              marginBottom: 16,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            <Space>
+              <CheckSquare size={18} color="#4338ca" />
+              <span style={{ fontWeight: 600, color: "#312e81" }}>
+                {selectedRowKeys.length} candidate{selectedRowKeys.length > 1 ? "s" : ""} selected
+              </span>
+            </Space>
+
+            <Space wrap>
+              <Button
+                type="primary"
+                icon={<Download size={14} style={{ marginRight: 4 }} />}
+                style={{ background: "#4338ca", borderColor: "#4338ca" }}
+                onClick={() => handleExportCsv(selectedRows, "chosen_candidates")}
+              >
+                Download Chosen Info as CSV
+              </Button>
+              <Button
+                icon={<FileSpreadsheet size={14} style={{ marginRight: 4 }} />}
+                onClick={() => handleExportJson(selectedRows, "chosen_candidates")}
+              >
+                Download as JSON
+              </Button>
+              <Button
+                icon={<X size={14} style={{ marginRight: 4 }} />}
+                onClick={() => {
+                  setSelectedRowKeys([]);
+                  setSelectedRows([]);
+                }}
+              >
+                Clear Selection
+              </Button>
+            </Space>
+          </div>
+        )}
+
         {/* Ant Design Candidates Table */}
         <Table
           columns={columns}
           dataSource={filteredCandidates}
           rowKey="id"
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys, rows) => {
+              setSelectedRowKeys(keys);
+              setSelectedRows(rows);
+            },
+          }}
           pagination={{ pageSize: 10, showSizeChanger: true }}
         />
       </Card>

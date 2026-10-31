@@ -14,7 +14,8 @@ public interface ActivityLogRepository extends JpaRepository<ActivityLog, UUID> 
 
     Page<ActivityLog> findAllByClientIdOrderByCreatedAtDesc(UUID clientId, Pageable pageable);
 
-    List<ActivityLog> findByEntityIdOrderByCreatedAtDesc(UUID entityId);
+    /** Tenant-scoped entity lookup — always filter by clientId to prevent cross-tenant access. */
+    List<ActivityLog> findByClientIdAndEntityIdOrderByCreatedAtDesc(UUID clientId, UUID entityId);
 
     List<ActivityLog> findByClientIdAndActionTypeOrderByCreatedAtDesc(UUID clientId, String actionType);
 }

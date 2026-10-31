@@ -52,20 +52,21 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints
                 .requestMatchers("/api/v1/auth/login",
-                                 "/api/v1/auth/register",
                                  "/api/v1/auth/password-reset/**").permitAll()
-                // Swagger / OpenAPI
+                // Swagger / OpenAPI — restricted to admins in production
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html",
-                                 "/api-docs/**", "/v3/api-docs/**").permitAll()
-                // JobRunr dashboard (internal)
+                                 "/api-docs/**", "/v3/api-docs/**")
+                                 .hasAnyRole("SUPER_ADMIN", "ADMIN")
+                // JobRunr dashboard (bound to port 8080 only as safety net)
                 .requestMatchers("/jobrunr/**").hasRole("SUPER_ADMIN")
-                // Actuator health
+                // Actuator — health only is public; everything else is admin-only
                 .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/actuator/**").hasRole("SUPER_ADMIN")
                 // SSE endpoint
                 .requestMatchers("/api/v1/sse/**").authenticated()
                 // All other API endpoints require authentication
                 .requestMatchers("/api/**").authenticated()
-                .anyRequest().authenticated()
+                .anyRequest().denyAll()
             )
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

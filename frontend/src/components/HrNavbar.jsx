@@ -1,5 +1,5 @@
 import React from "react";
-import { Button, Dropdown, Space, Avatar, Badge } from "antd";
+import { Button, Dropdown, Space, Avatar, Badge, Tooltip } from "antd";
 import {
   LayoutDashboard,
   Users,
@@ -10,11 +10,20 @@ import {
   Plus,
   ShieldCheck,
   Building2,
+  Layers,
+  Mail,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 
-export function HrNavbar({ onNewCandidate, isSseActive, activeTab, setActiveTab }) {
+export function HrNavbar({
+  onNewCandidate,
+  onOpenBulkUpload,
+  onOpenEmailPipeline,
+  isSseActive,
+  activeTab,
+  setActiveTab,
+}) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -175,6 +184,38 @@ export function HrNavbar({ onNewCandidate, isSseActive, activeTab, setActiveTab 
           />
           <span>{isSseActive ? "Live SSE Active" : "Syncing"}</span>
         </div>
+
+        {/* Email Ingestion Pipeline Button */}
+        <Tooltip title="View IMAP email resume pipeline & trigger inbox scan">
+          <Button
+            icon={<Mail size={14} style={{ marginRight: 2 }} />}
+            onClick={onOpenEmailPipeline}
+            style={{
+              borderRadius: 8,
+              fontSize: 13,
+              borderColor: "#c7d2fe",
+              color: "#4f46e5",
+            }}
+          >
+            Email Pipeline
+          </Button>
+        </Tooltip>
+
+        {/* Bulk Resume Upload CTA */}
+        <Tooltip title="Bulk drag-and-drop multiple candidate resumes (PDF/DOCX)">
+          <Button
+            icon={<Layers size={14} style={{ marginRight: 2 }} />}
+            onClick={onOpenBulkUpload}
+            style={{
+              borderRadius: 8,
+              fontSize: 13,
+              borderColor: "#c7d2fe",
+              color: "#4f46e5",
+            }}
+          >
+            Bulk Upload
+          </Button>
+        </Tooltip>
 
         {/* Ingest Candidate CTA */}
         <Button

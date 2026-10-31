@@ -1,6 +1,8 @@
 package com.ats.domain.entity;
 
 import com.ats.domain.enums.ApplicationStatus;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -33,6 +35,7 @@ public class Application extends BaseEntity {
     @Column(name = "client_id", nullable = false)
     private UUID clientId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", insertable = false, updatable = false)
     private Client client;
@@ -40,6 +43,7 @@ public class Application extends BaseEntity {
     @Column(name = "candidate_id", nullable = false)
     private UUID candidateId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "candidate_id", insertable = false, updatable = false)
     private Candidate candidate;
@@ -47,6 +51,7 @@ public class Application extends BaseEntity {
     @Column(name = "job_id")
     private UUID jobId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "job_id", insertable = false, updatable = false)
     private Job job;
@@ -84,6 +89,7 @@ public class Application extends BaseEntity {
     @Column(name = "applied_by_user_id")
     private UUID appliedByUserId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "applied_by_user_id", insertable = false, updatable = false)
     private User appliedByUser;

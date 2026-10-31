@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,14 +31,17 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ApplicationController {
 
+    private static final int MAX_PAGE_SIZE = 200;
     private final ApplicationService applicationService;
 
     @Operation(summary = "List all applications (paginated)")
     @GetMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER','CLIENT_ADMIN','CLIENT_USER')")
     public ResponseEntity<Page<Application>> listApplications(
             @AuthenticationPrincipal User user,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        size = Math.min(size, MAX_PAGE_SIZE);
         return ResponseEntity.ok(
                 applicationService.listApplications(user.getClientId(),
                         PageRequest.of(page, size, Sort.by("applicationDate").descending())));
@@ -45,6 +49,7 @@ public class ApplicationController {
 
     @Operation(summary = "Get an application by ID")
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER','CLIENT_ADMIN','CLIENT_USER')")
     public ResponseEntity<Application> getApplication(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id) {
@@ -53,6 +58,7 @@ public class ApplicationController {
 
     @Operation(summary = "Create a new application")
     @PostMapping
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER')")
     public ResponseEntity<Application> createApplication(
             @AuthenticationPrincipal User user,
             @RequestBody Map<String, Object> body) {
@@ -75,6 +81,7 @@ public class ApplicationController {
 
     @Operation(summary = "Transition application status (FSM)")
     @PatchMapping("/{id}/status")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER')")
     public ResponseEntity<Application> updateStatus(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id,
@@ -93,6 +100,7 @@ public class ApplicationController {
 
     @Operation(summary = "Acknowledge HR interview")
     @PostMapping("/{id}/hr-interview-acknowledge")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER')")
     public ResponseEntity<Application> acknowledgeHrInterview(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id,
@@ -105,6 +113,7 @@ public class ApplicationController {
 
     @Operation(summary = "Flag application for review")
     @PostMapping("/{id}/flag")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER','HR_RECRUITER')")
     public ResponseEntity<Application> flagForReview(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id,
@@ -115,6 +124,7 @@ public class ApplicationController {
 
     @Operation(summary = "Soft delete an application")
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER')")
     public ResponseEntity<Void> deleteApplication(
             @AuthenticationPrincipal User user,
             @PathVariable UUID id) {

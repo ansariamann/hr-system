@@ -211,7 +211,7 @@ export function HrCopilot({ candidates = [] }) {
 
           <div style={{ marginTop: 8, textAlign: "center" }}>
             <Text type="secondary" style={{ fontSize: 11 }}>
-              AI insights are advisory. Enforces zero data leakage across tenants.
+              AI insights are advisory only. Always verify with your HR team.
             </Text>
           </div>
         </div>

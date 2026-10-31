@@ -18,6 +18,13 @@ public interface InterviewRecordRepository extends JpaRepository<InterviewRecord
     @Query("SELECT i FROM InterviewRecord i WHERE i.clientId = :clientId AND i.deletedAt IS NULL")
     Page<InterviewRecord> findAllByClientIdNotDeleted(@Param("clientId") UUID clientId, Pageable pageable);
 
+    /** Tenant-scoped: only returns interviews belonging to the caller's client. */
+    @Query("SELECT i FROM InterviewRecord i WHERE i.candidateId = :candidateId AND i.clientId = :clientId AND i.deletedAt IS NULL")
+    List<InterviewRecord> findByCandidateIdAndClientIdNotDeleted(
+            @Param("candidateId") UUID candidateId,
+            @Param("clientId") UUID clientId);
+
+    /** Legacy — kept for internal use only; controllers must use the tenant-scoped variant. */
     @Query("SELECT i FROM InterviewRecord i WHERE i.candidateId = :candidateId AND i.deletedAt IS NULL")
     List<InterviewRecord> findByCandidateIdNotDeleted(@Param("candidateId") UUID candidateId);
 

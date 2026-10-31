@@ -32,11 +32,22 @@ public class CandidateService {
 
     @Transactional(readOnly = true)
     public Page<Candidate> listCandidates(UUID clientId, Pageable pageable) {
+        // clientId == null means the user is a super_admin with no dedicated tenant.
+        // We still scope to all records (intended for platform-wide admin view)
+        // but this path is now only reachable by super_admin due to controller @PreAuthorize.
+        if (clientId == null) {
+            return candidateRepository.findAll(pageable);
+        }
         return candidateRepository.findAllByClientId(clientId, pageable);
     }
 
     @Transactional(readOnly = true)
     public Candidate getById(UUID id, UUID clientId) {
+        if (clientId == null) {
+            // super_admin with no tenant — allowed to fetch any record
+            return candidateRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Candidate", id));
+        }
         return candidateRepository.findByIdAndClientId(id, clientId)
                 .orElseThrow(() -> new ResourceNotFoundException("Candidate", id));
     }

@@ -19,10 +19,14 @@ export function AdminLogin() {
     const password = formData.get("password");
 
     try {
-      const result = await login(email, password, "admin");
+      const result = await login(email, password);
 
       if (result.success) {
-        navigate("/hr/dashboard", { replace: true });
+        if (result.user?.role?.includes("CLIENT")) {
+          navigate("/portal/dashboard", { replace: true });
+        } else {
+          navigate("/hr/dashboard", { replace: true });
+        }
       } else {
         setError(result.error || "Invalid email or password");
       }
@@ -38,11 +42,30 @@ export function AdminLogin() {
       <div className="w-full max-w-md border-0 shadow-2xl bg-white/80 backdrop-blur-sm rounded-lg overflow-hidden">
         {/* Card Header */}
         <div className="space-y-1 p-6 pb-4">
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+            <div
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 10,
+                background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+                color: "#ffffff",
+                fontWeight: 800,
+                fontSize: 18,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 4px 12px rgba(79, 70, 229, 0.35)",
+              }}
+            >
+              ATS
+            </div>
+          </div>
           <h2 className="text-2xl font-bold tracking-tight text-center text-gray-900">
-            Welcome back
+            Enterprise HR Portal
           </h2>
           <p className="text-sm text-gray-500 text-center">
-            Enter your email to sign in to your account
+            Sign in with your administrator account
           </p>
         </div>
 
@@ -60,7 +83,7 @@ export function AdminLogin() {
                 id="email"
                 name="email"
                 type="email"
-                placeholder="m@example.com"
+                placeholder="name@company.com"
                 required
                 disabled={isLoading}
                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -78,6 +101,7 @@ export function AdminLogin() {
                 id="password"
                 name="password"
                 type="password"
+                placeholder="••••••••"
                 required
                 disabled={isLoading}
                 className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"

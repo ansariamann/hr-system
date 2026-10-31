@@ -1,5 +1,6 @@
 package com.ats.domain.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.hypersistence.utils.hibernate.type.json.JsonType;
 import jakarta.persistence.*;
 import lombok.*;
@@ -30,6 +31,7 @@ public class InterviewRecord extends BaseEntity {
     @Column(name = "candidate_id", nullable = false)
     private UUID candidateId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "candidate_id", insertable = false, updatable = false)
     private Candidate candidate;
@@ -37,6 +39,7 @@ public class InterviewRecord extends BaseEntity {
     @Column(name = "client_id", nullable = false)
     private UUID clientId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", insertable = false, updatable = false)
     private Client client;
@@ -44,6 +47,7 @@ public class InterviewRecord extends BaseEntity {
     @Column(name = "company_id", nullable = false)
     private UUID companyId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "company_id", insertable = false, updatable = false)
     private Client company;
@@ -51,6 +55,7 @@ public class InterviewRecord extends BaseEntity {
     @Column(name = "job_id")
     private UUID jobId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "job_id", insertable = false, updatable = false)
     private Job job;
@@ -58,6 +63,7 @@ public class InterviewRecord extends BaseEntity {
     @Column(name = "interviewer_id", nullable = false)
     private UUID interviewerId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "interviewer_id", insertable = false, updatable = false)
     private User interviewer;

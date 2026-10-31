@@ -22,17 +22,27 @@ public class JobService {
 
     @Transactional(readOnly = true)
     public Page<Job> listJobs(UUID clientId, Pageable pageable) {
+        if (clientId == null) {
+            return jobRepository.findAll(pageable);
+        }
         return jobRepository.findAllByClientId(clientId, pageable);
     }
 
     @Transactional(readOnly = true)
     public Job getById(UUID id, UUID clientId) {
+        if (clientId == null) {
+            return jobRepository.findById(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Job", id));
+        }
         return jobRepository.findByIdAndClientId(id, clientId)
                 .orElseThrow(() -> new ResourceNotFoundException("Job", id));
     }
 
     @Transactional(readOnly = true)
     public List<Job> getVacantOpenJobs(UUID clientId) {
+        if (clientId == null) {
+            return jobRepository.findVacantOpenJobs();
+        }
         return jobRepository.findVacantOpenJobsByClient(clientId);
     }
 

@@ -26,5 +26,8 @@ public interface JobRepository extends JpaRepository<Job, UUID>,
     @Query("SELECT j FROM Job j WHERE j.clientId = :clientId AND j.vacant = true AND j.status = 'OPEN'")
     List<Job> findVacantOpenJobsByClient(@Param("clientId") UUID clientId);
 
+    @Query("SELECT j FROM Job j WHERE j.vacant = true AND j.status = 'OPEN'")
+    List<Job> findVacantOpenJobs();
+
     long countByClientId(UUID clientId);
 }

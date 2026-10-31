@@ -1,6 +1,7 @@
 package com.ats.domain.entity;
 
 import com.ats.domain.enums.UserRole;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -30,6 +31,7 @@ public class User extends BaseEntity {
     @Column(name = "email", nullable = false, unique = true, length = 255)
     private String email;
 
+    @JsonIgnore
     @Column(name = "hashed_password", nullable = false, length = 255)
     private String hashedPassword;
 
@@ -45,9 +47,10 @@ public class User extends BaseEntity {
     @Builder.Default
     private UserRole role = UserRole.client_user;
 
-    @Column(name = "client_id", nullable = false)
+    @Column(name = "client_id", nullable = true)
     private UUID clientId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", insertable = false, updatable = false)
     private Client client;

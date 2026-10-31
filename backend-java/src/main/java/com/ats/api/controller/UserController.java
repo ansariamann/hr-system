@@ -34,10 +34,29 @@ public class UserController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
+    /** Returns the highest role this principal is allowed to assign. */
+    private UserRole maxAssignableRole(User principal) {
+        return switch (principal.getRole()) {
+            case super_admin -> UserRole.super_admin;
+            case admin       -> UserRole.admin;
+            case hr_manager  -> UserRole.hr_manager;
+            default          -> UserRole.client_user; // client_admin/client_user cannot promote
+        };
+    }
+
+    /** True if the role being assigned is within the caller's authority. */
+    private boolean canAssignRole(User principal, UserRole target) {
+        return target.ordinal() >= maxAssignableRole(principal).ordinal();
+        // ordinal: super_admin=0 … client_user=5; higher ordinal = lower privilege
+    }
+
     @Operation(summary = "List all users for the current tenant")
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPER_ADMIN','ADMIN','HR_MANAGER')")
     public ResponseEntity<List<User>> listUsers(@AuthenticationPrincipal User currentUser) {
+        if (currentUser.getRole() == UserRole.super_admin) {
+            return ResponseEntity.ok(userRepository.findAll());
+        }
         return ResponseEntity.ok(userRepository.findAllByClientId(currentUser.getClientId()));
     }
 
@@ -50,9 +69,14 @@ public class UserController {
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
 
         // Non-admins can only view their own profile
-        String role = currentUser.getRole().name();
-        if (!currentUser.getId().equals(id)
-                && !role.equals("super_admin") && !role.equals("admin") && !role.equals("hr_manager")) {
+        boolean isSelf = currentUser.getId().equals(id);
+        boolean isSameTenant = user.getClientId() != null
+                && user.getClientId().equals(currentUser.getClientId());
+        boolean isElevated = currentUser.getRole() == UserRole.super_admin
+                || ((currentUser.getRole() == UserRole.admin || currentUser.getRole() == UserRole.hr_manager)
+                    && isSameTenant);
+
+        if (!isSelf && !isElevated) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
 
@@ -70,20 +94,41 @@ public class UserController {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
 
-        // Scope: can only edit users in own client
-        if (!user.getClientId().equals(currentUser.getClientId())
-                && !currentUser.getRole().name().equals("super_admin")) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        // Scope: super_admin can edit anyone; others only within their own tenant
+        if (currentUser.getRole() != UserRole.super_admin) {
+            if (currentUser.getClientId() == null) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            boolean sameTenant = user.getClientId() != null
+                    && user.getClientId().equals(currentUser.getClientId());
+            if (!sameTenant) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            // Rank check: callers cannot modify or demote a user of equal or higher rank
+            if (user.getRole().ordinal() <= currentUser.getRole().ordinal()) {
+                throw new AtsException(
+                        "Cannot modify an account with equal or higher privilege level than your own.",
+                        HttpStatus.FORBIDDEN);
+            }
         }
 
         if (body.containsKey("full_name"))  user.setFullName((String) body.get("full_name"));
         if (body.containsKey("is_active"))  user.setIsActive((Boolean) body.get("is_active"));
+
+        // Role change: caller can only assign roles ≤ their own
         if (body.containsKey("role")) {
+            UserRole requested;
             try {
-                user.setRole(UserRole.valueOf((String) body.get("role")));
+                requested = UserRole.valueOf((String) body.get("role"));
             } catch (IllegalArgumentException e) {
                 throw new AtsException("Invalid role: " + body.get("role"), HttpStatus.BAD_REQUEST);
             }
+            if (!canAssignRole(currentUser, requested)) {
+                throw new AtsException(
+                    "You cannot assign the role '" + requested + "' — it exceeds your own privilege level.",
+                    HttpStatus.FORBIDDEN);
+            }
+            user.setRole(requested);
         }
 
         return ResponseEntity.ok(userRepository.save(user));
@@ -102,6 +147,25 @@ public class UserController {
 
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User", id));
+
+        // Scope check
+        if (currentUser.getRole() != UserRole.super_admin) {
+            if (currentUser.getClientId() == null) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            boolean sameTenant = user.getClientId() != null
+                    && user.getClientId().equals(currentUser.getClientId());
+            if (!sameTenant) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            // Rank check: callers cannot deactivate a user of equal or higher rank
+            if (user.getRole().ordinal() <= currentUser.getRole().ordinal()) {
+                throw new AtsException(
+                        "Cannot deactivate an account with equal or higher privilege level than your own.",
+                        HttpStatus.FORBIDDEN);
+            }
+        }
+
         user.setIsActive(false);
         userRepository.save(user);
         return ResponseEntity.ok(Map.of("message", "User deactivated successfully"));

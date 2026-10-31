@@ -7,6 +7,7 @@ const { Title, Text } = Typography;
 
 export function JobsView() {
   const [jobs, setJobs] = useState([]);
+  const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [form] = Form.useForm();
@@ -15,60 +16,8 @@ export function JobsView() {
     setLoading(true);
     try {
       const data = await api.getJobs();
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         setJobs(data);
-      } else {
-        // Fallback demo jobs
-        setJobs([
-          {
-            id: "job-1",
-            title: "Senior Java / Spring Boot Engineer",
-            department: "Engineering",
-            location: "Bangalore (Hybrid)",
-            employment_type: "FULL_TIME",
-            openings_count: 3,
-            salary_lpa: 28,
-            experience_required: 5,
-            status: "OPEN",
-            company_name: "FinTech Platform",
-          },
-          {
-            id: "job-2",
-            title: "Full Stack React Developer",
-            department: "Frontend",
-            location: "Remote",
-            employment_type: "FULL_TIME",
-            openings_count: 2,
-            salary_lpa: 22,
-            experience_required: 4,
-            status: "OPEN",
-            company_name: "CloudScale Inc",
-          },
-          {
-            id: "job-3",
-            title: "DevOps & Infrastructure Lead",
-            department: "Cloud Ops",
-            location: "Hyderabad",
-            employment_type: "FULL_TIME",
-            openings_count: 1,
-            salary_lpa: 35,
-            experience_required: 7,
-            status: "OPEN",
-            company_name: "Enterprise Solutions",
-          },
-          {
-            id: "job-4",
-            title: "QA Automation Engineer",
-            department: "Quality Assurance",
-            location: "Pune",
-            employment_type: "FULL_TIME",
-            openings_count: 2,
-            salary_lpa: 16,
-            experience_required: 3,
-            status: "CLOSED",
-            company_name: "LogiTech Systems",
-          },
-        ]);
       }
     } catch (err) {
       console.error("Failed to load jobs", err);
@@ -77,19 +26,43 @@ export function JobsView() {
     }
   };
 
+  const loadClients = async () => {
+    try {
+      const data = await api.getClients();
+      if (Array.isArray(data)) {
+        setClients(data);
+      }
+    } catch (err) {
+      console.error("Failed to load clients", err);
+    }
+  };
+
   useEffect(() => {
     loadJobs();
+    loadClients();
   }, []);
 
   const handleCreateJob = async (values) => {
     try {
-      await api.createJob(values);
+      let companyName = values.companyName;
+      let clientId = values.clientId;
+      if (clientId) {
+        const found = clients.find((c) => c.id === clientId);
+        if (found) {
+          companyName = found.name;
+        }
+      }
+      await api.createJob({
+        ...values,
+        companyName: companyName || "Enterprise ATS",
+        clientId: clientId || null,
+      });
       message.success(`Job requisition "${values.title}" created successfully!`);
       setIsAddModalOpen(false);
       form.resetFields();
-      loadJobs();
+      await loadJobs();
     } catch (err) {
-      message.error("Failed to create job requisition");
+      message.error("Failed to create job requisition: " + (err.message || "Unknown error"));
     }
   };
 
@@ -212,7 +185,17 @@ export function JobsView() {
           <Form.Item name="title" label="Job Title" rules={[{ required: true, message: "Enter job title" }]}>
             <Input placeholder="e.g. Senior Java / Spring Boot Engineer" />
           </Form.Item>
-          <Form.Item name="companyName" label="Client / Company Name" initialValue="Enterprise ATS">
+          <Form.Item name="clientId" label="Assign to Client Organization (Optional)">
+            <Select placeholder="Select client organization (or leave for general ATS)" allowClear>
+              <Select.Option value="">-- General / Enterprise ATS --</Select.Option>
+              {clients.map((c) => (
+                <Select.Option key={c.id} value={c.id}>
+                  {c.name} ({c.industry || "General"})
+                </Select.Option>
+              ))}
+            </Select>
+          </Form.Item>
+          <Form.Item name="companyName" label="Client / Company Display Name" initialValue="Enterprise ATS">
             <Input placeholder="e.g. Acme Corp" />
           </Form.Item>
           <Form.Item name="department" label="Department" initialValue="Engineering">

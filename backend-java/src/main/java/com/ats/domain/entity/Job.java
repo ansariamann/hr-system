@@ -1,5 +1,6 @@
 package com.ats.domain.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -30,9 +31,10 @@ public class Job extends BaseEntity {
     @Column(name = "id", updatable = false, nullable = false)
     private UUID id;
 
-    @Column(name = "client_id", nullable = false)
+    @Column(name = "client_id", nullable = true)
     private UUID clientId;
 
+    @JsonIgnore
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", insertable = false, updatable = false)
     private Client client;
@@ -86,6 +88,7 @@ public class Job extends BaseEntity {
     private Boolean submittedByClient = false;
 
     // ─── Relationships ──────────────────────────────────────────────────
+    @JsonIgnore
     @OneToMany(mappedBy = "job", fetch = FetchType.LAZY)
     private List<Application> applications;
 }

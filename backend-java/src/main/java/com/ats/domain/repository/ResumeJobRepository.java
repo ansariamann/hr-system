@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface ResumeJobRepository extends JpaRepository<ResumeJob, UUID> {
     List<ResumeJob> findAllByClientIdOrderByCreatedAtDesc(UUID clientId);
     List<ResumeJob> findAllByStatus(String status);
+    java.util.Optional<ResumeJob> findByEmailMessageId(String emailMessageId);
 }

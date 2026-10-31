@@ -38,15 +38,18 @@ public class JwtService {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtExpirationMs);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(user.getId().toString())
-                .claim("client_id", user.getClientId().toString())
                 .claim("email", user.getEmail())
                 .claim("role", user.getRole().name())
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(key())
-                .compact();
+                .expiration(expiry);
+
+        if (user.getClientId() != null) {
+            builder.claim("client_id", user.getClientId().toString());
+        }
+
+        return builder.signWith(key()).compact();
     }
 
     public Claims extractAllClaims(String token) {
@@ -62,7 +65,12 @@ public class JwtService {
     }
 
     public UUID extractClientId(String token) {
-        return UUID.fromString(extractAllClaims(token).get("client_id", String.class));
+        try {
+            String clientId = extractAllClaims(token).get("client_id", String.class);
+            return (clientId != null && !clientId.isBlank()) ? UUID.fromString(clientId) : null;
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public String extractEmail(String token) {

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ConfigProvider } from "antd";
 import { api } from "./api";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminLogin } from "./pages/AdminLogin";
 import { ClientLogin } from "./pages/ClientLogin";
@@ -19,6 +19,8 @@ import { ClientPortal } from "./components/ClientPortal";
 import { SplitScreenReview } from "./components/SplitScreenReview";
 import { ScheduleModal } from "./components/ScheduleModal";
 import { AddCandidateModal } from "./components/AddCandidateModal";
+import { BulkResumeUploadModal } from "./components/BulkResumeUploadModal";
+import { EmailIngestionModal } from "./components/EmailIngestionModal";
 import { ClientsView } from "./components/ClientsView";
 import { AssignCandidateModal } from "./components/AssignCandidateModal";
 
@@ -37,6 +39,8 @@ function HrPortalView({
   onToggleBlacklist,
   onResetData,
   onOpenAddModal,
+  onOpenBulkUpload,
+  onOpenEmailPipeline,
   isSseActive,
   lastSseEvent,
 }) {
@@ -48,6 +52,8 @@ function HrPortalView({
       {/* Enterprise Ant Design Navigation Header */}
       <HrNavbar
         onNewCandidate={onOpenAddModal}
+        onOpenBulkUpload={onOpenBulkUpload}
+        onOpenEmailPipeline={onOpenEmailPipeline}
         isSseActive={isSseActive}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -168,17 +174,20 @@ function ClientPortalView({
   );
 }
 
-// Root Application Controller
-export default function App() {
+// Root Application Content (Auth-Aware)
+function AppContent() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [candidates, setCandidates] = useState([]);
   const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Modals
   const [reviewingCandidate, setReviewingCandidate] = useState(null);
   const [schedulingCandidate, setSchedulingCandidate] = useState(null);
   const [assigningCandidate, setAssigningCandidate] = useState(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [isEmailPipelineOpen, setIsEmailPipelineOpen] = useState(false);
 
   // Notifications & Realtime SSE
   const [toasts, setToasts] = useState([]);
@@ -217,9 +226,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadCandidates();
-    loadClients();
-  }, [loadCandidates, loadClients]);
+    if (isAuthenticated) {
+      loadCandidates();
+      loadClients();
+    } else {
+      setCandidates([]);
+      setClients([]);
+      setLoading(false);
+    }
+  }, [isAuthenticated, loadCandidates, loadClients]);
 
   // Simulated SSE Heartbeat & Live Client Updates Ticker
   useEffect(() => {
@@ -227,7 +242,7 @@ export default function App() {
       const events = [
         {
           type: "HEARTBEAT",
-          text: "SSE connection active • Tenant isolation verified",
+          text: "SSE connection active",
         },
         {
           type: "CANDIDATE_INGESTED",
@@ -380,12 +395,14 @@ export default function App() {
     showToast(`Candidate ${created.name} ingested successfully!`, "success");
   };
 
-  // Handle Reset Demo Data
-  const handleResetData = () => {
-    const fresh = api.resetDemoData();
-    setCandidates(fresh);
-    api.getClients().then(setClients);
-    showToast("Candidate and client databases reset to defaults.", "info");
+  // Handle Refresh Data
+  const handleRefreshData = async () => {
+    try {
+      await Promise.all([loadCandidates(), loadClients()]);
+      showToast("Data refreshed from server.", "info");
+    } catch (err) {
+      showToast("Failed to refresh data: " + (err.message || err), "error");
+    }
   };
 
   // Handle Job Post from Client
@@ -396,7 +413,7 @@ export default function App() {
     );
   };
 
-  if (loading) {
+  if (authLoading || (loading && isAuthenticated)) {
     return (
       <div
         style={{
@@ -415,17 +432,7 @@ export default function App() {
   }
 
   return (
-    <ConfigProvider
-      theme={{
-        token: {
-          colorPrimary: "#4f46e5",
-          borderRadius: 8,
-          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
-        },
-      }}
-    >
-      <BrowserRouter>
-        <AuthProvider>
+    <>
           {/* Route Definitions */}
           <Routes>
             <Route path="/admin/login" element={<AdminLogin />} />
@@ -450,8 +457,10 @@ export default function App() {
                     onToggleBlacklist={(id) =>
                       handleTransitionStatus(id, "left_company")
                     }
-                    onResetData={handleResetData}
+                    onResetData={handleRefreshData}
                     onOpenAddModal={() => setIsAddModalOpen(true)}
+                    onOpenBulkUpload={() => setIsBulkUploadOpen(true)}
+                    onOpenEmailPipeline={() => setIsEmailPipelineOpen(true)}
                     isSseActive={isSseActive}
                     lastSseEvent={lastSseEvent}
                   />
@@ -525,6 +534,21 @@ export default function App() {
             />
           )}
 
+          {/* Bulk Resume Upload Modal */}
+          <BulkResumeUploadModal
+            open={isBulkUploadOpen}
+            onClose={() => setIsBulkUploadOpen(false)}
+            onRefreshCandidates={loadCandidates}
+            clients={clients}
+          />
+
+          {/* Email Ingestion Pipeline Modal */}
+          <EmailIngestionModal
+            open={isEmailPipelineOpen}
+            onClose={() => setIsEmailPipelineOpen(false)}
+            onRefreshCandidates={loadCandidates}
+          />
+
           {/* Toast Notification Container */}
           <div className="toast-container">
             {toasts.map((t) => (
@@ -536,6 +560,24 @@ export default function App() {
               </div>
             ))}
           </div>
+    </>
+  );
+}
+
+export default function App() {
+  return (
+    <ConfigProvider
+      theme={{
+        token: {
+          colorPrimary: "#4f46e5",
+          borderRadius: 8,
+          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+        },
+      }}
+    >
+      <BrowserRouter>
+        <AuthProvider>
+          <AppContent />
         </AuthProvider>
       </BrowserRouter>
     </ConfigProvider>
